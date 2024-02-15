@@ -702,8 +702,8 @@ M.position = {
 ---Redraw the tree without relaoding from the source.
 ---@param state NeotreeState
 ---@param curpos NeotreeCursorPos|nil # Set cursor position. (row, col)
-M.redraw = function (state, curpos)
-  vim.schedule(function ()
+M.redraw = function(state, curpos)
+  vim.schedule(function()
     local mgr = require("neo-tree.manager").get_current()
     if mgr then
       mgr:redraw(state, curpos)
