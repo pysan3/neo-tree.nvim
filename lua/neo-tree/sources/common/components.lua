@@ -6,19 +6,25 @@ local log = require("neo-tree.log")
 
 ---This file contains the built-in components. Each componment is a function
 ---that takes the following arguments:
----     config: A table containing the configuration provided by the user
----             when declaring this component in their renderer config.
----     node:   A NuiNode object for the currently focused node.
----     state:  The current state of the source providing the items.
+---    config:       A table containing the configuration provided by the user
+---                  when declaring this component in their renderer config.
+---    node:         A NuiNode object for the currently focused node.
+---    state:        The current state of the source providing the items.
+---    window_width: A table that contains information about the width that may be allocated for the component.
+---                  This table contains the following attributes.
+---        width (integer):  allocated width
+---        strict (boolean): whether component can exceed the width. If false, returned `wanted_width` may be respected.
 ---
 ---The function should return either a table, or a list of tables, each of which
 ---contains the following keys:
----   text:      The text to display for this item.
----   highlight: The highlight group to apply to this text.
+---    text:      The text to display for this item.
+---    highlight: The highlight group to apply to this text.
+---It also may return `wanted_width` to render the component.
+---This value might be ignored anyways and not guarantied to be allocated.
 ---@type table<string, NeotreeComponentFunc>
 local M = {}
----@alias NeotreeComponentFunc fun(config: NeotreeComponentBase, node: NuiTreeNode|NeotreeSourceItem, state: NeotreeState): NeotreeComponentResult|NeotreeComponentResult[]
----@alias NeotreeComponentResult { text: string, highlight: NeotreeHighlightGroupName }
+---@alias NeotreeComponentFunc fun(config: NeotreeComponentBase, node: NuiTreeNode|NeotreeSourceItem, state: NeotreeState): NeotreeComponentResult|NeotreeComponentResult[], integer|nil
+---@alias NeotreeComponentResult { text: string, highlight: NeotreeHighlightGroupName, no_padding: boolean|nil, no_next_padding: boolean|nil }
 
 local make_two_char = function(symbol)
   if vim.fn.strchars(symbol) == 1 then

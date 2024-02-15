@@ -175,13 +175,13 @@ function flatten_nesting(nesting_parents)
   end
 end
 
-function M.nest_items(context)
-  if M.is_enabled() == false or table_is_empty(context.nesting) then
+function M.nest_items(file_item_context)
+  if M.is_enabled() == false or table_is_empty(file_item_context.nesting) then
     return
   end
-  for _, config in pairs(context.nesting) do
-    local files = config.nesting_callback(config, context.all_items)
-    local folder = context.folders[config.parent_path]
+  for _, config in pairs(file_item_context.nesting) do
+    local files = config.nesting_callback(config, file_item_context.all_items)
+    local folder = file_item_context.folders[config.parent_path]
     for _, to_be_nested in ipairs(files) do
       table.insert(config.children, to_be_nested)
       to_be_nested.is_nested = true
@@ -196,7 +196,7 @@ function M.nest_items(context)
     end
   end
 
-  flatten_nesting(context.nesting)
+  flatten_nesting(file_item_context.nesting)
 end
 
 function M.get_nesting_callback(item)

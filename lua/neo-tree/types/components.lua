@@ -42,6 +42,8 @@
 ---@class NeotreeComponent.container : NeotreeComponentBase
 ---@field enable_character_fade boolean|nil (true)
 ---@field width NeotreeConfig.wh|nil ("100%")
+---@field min_width number|nil
+---@field max_width number|nil
 ---@field right_padding integer|nil (0)
 
 ---@class NeotreeComponent.diagnostics : NeotreeComponentBase

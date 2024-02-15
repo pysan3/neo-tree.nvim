@@ -52,6 +52,50 @@ M.execute = function(args)
     return
   end
 
+  local nio = require("neo-tree.utils.nio_wrapper")
+  nio.run(function()
+    local mgr = require("neo-tree.manager").new(nt.config, vim.api.nvim_get_current_tabpage())
+    vim.schedule(function()
+      mgr:navigate(args)
+    end)
+  end)
+end
+
+---Executes a Neo-tree action from outside of a Neo-tree window,
+---such as show, hide, navigate, etc.
+---@param args table The action to execute. The table can have the following keys:
+---  action = string   The action to execute, can be one of:
+---                    "close",
+---                    "focus", <-- default value
+---                    "show",
+---  source = string   The source to use for this action. This will default
+---                    to the default_source specified in the user's config.
+---                    Can be one of:
+---                    "filesystem",
+---                    "buffers",
+---                    "git_status",
+--                     "migrations"
+---  position = string The position this action will affect. This will default
+---                    to the the last used position or the position specified
+---                    in the user's config for the given source. Can be one of:
+---                    "left",
+---                    "right",
+---                    "float",
+---                    "current"
+---  toggle = boolean  Whether to toggle the visibility of the Neo-tree window.
+---  reveal = boolean  Whether to reveal the current file in the Neo-tree window.
+---  reveal_file = string The specific file to reveal.
+---  dir = string      The root directory to set.
+---  git_base = string The git base used for diff
+M.execute2 = function(args)
+  local nt = require("neo-tree")
+  nt.ensure_config()
+
+  if args.source == "migrations" then
+    require("neo-tree.setup.deprecations").show_migrations()
+    return
+  end
+
   args.action = args.action or "focus"
 
   -- handle close action, which can specify a source and/or position

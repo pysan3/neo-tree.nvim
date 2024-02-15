@@ -8,11 +8,42 @@ local items = require("neo-tree.sources.buffers.lib.items")
 local events = require("neo-tree.events")
 local manager = require("neo-tree.sources.manager")
 local git = require("neo-tree.git")
+local Path = require("pathlib")
 
-local M = {
+---@class NeotreeBuffers : NeotreeState
+---@field config NeotreeConfig.buffers
+---@field dir PathlibPath
+local M = setmetatable({
+  -- Attributes defined her end
   name = "buffers",
   display_name = " 󰈚 Buffers ",
-}
+  commands = require("neo-tree.sources.buffer.commands"),
+  window = {},
+  components = require("neo-tree.sources.buffer.components"),
+  renderers = {},
+}, {
+  __index = require("neo-tree.sources.base"), -- Inherit from base class.
+  __call = function(cls, ...)
+    return cls.new(cls, ...)
+  end,
+})
+M.__index = M
+
+---Create new manager instance or return cache if already created.
+---@param config NeotreeConfig.buffers
+---@param id string # id of this state passed from `self.setup`.
+---@param dir string|nil
+function M.new(config, id, dir)
+  local self = setmetatable({
+    id = id,
+    dir = dir and Path.new(dir) or Path.cwd(),
+    config = config,
+  }, M)
+  if not self.dir:is_dir(true) then
+    require("neo-tree.log").error("Buffers (%s) is not a directory. Abort.", self.dir:tostring())
+    return
+  end
+end
 
 local wrap = function(func)
   return utils.wrap(func, M.name)
@@ -81,30 +112,20 @@ M.buffers_changed = function()
 end
 
 ---Navigate to the given path.
----@param path string Path to navigate to. If empty, will navigate to the cwd.
-M.navigate = function(state, path, path_to_reveal, callback, async)
+---@param path PathlibPath|nil Path to navigate to. If empty, will navigate to the cwd.
+M.navigate = function(state, path, path_to_reveal, window_width, manager, failed_args)
   state.dirty = false
-  local path_changed = false
-  if path == nil then
-    path = vim.fn.getcwd()
-  end
-  if path ~= state.path then
-    state.path = path
-    path_changed = true
+  if path and path:absolute() ~= state.dir then
+    local new_id = state.name .. state.dir:tostring()
+    local reason = string.format("dir %s is not supported.", path) -- If new_id is nil, this reason will be reported to the user.
+    return manager:fail(reason, new_id, state, path, path_to_reveal, window_width, failed_args)
   end
   if path_to_reveal then
     renderer.position.set(state, path_to_reveal)
   end
 
   items.get_opened_buffers(state)
-
-  if path_changed and state.bind_to_cwd then
-    vim.api.nvim_command("tcd " .. path)
-  end
-
-  if type(callback) == "function" then
-    vim.schedule(callback)
-  end
+  manager:done(state, nil)
 end
 
 ---Configures the plugin, should be called before the plugin is used.

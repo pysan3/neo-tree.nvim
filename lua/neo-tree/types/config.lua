@@ -50,7 +50,7 @@
 -- The first field in each component is the name of the function to call.
 -- The rest of the fields are passed to the function as the "config" argument.
 ---@field renderers NeotreeConfig.renderers|nil
----@field commands NeotreeConfig.mappings|nil
+---@field commands NeotreeConfig.command_table|nil
 ---@field window NeotreeConfig.window|nil
 ---@field filesystem NeotreeConfig.filesystem|nil
 ---@field buffers NeotreeConfig.buffers|nil
@@ -141,21 +141,31 @@
 ---Mappings for tree window. See `:h neo-tree-mappings` for a list of built-in commands.
 ---@field mappings NeotreeConfig.mappings|nil
 ---@field fuzzy_finder_mappings NeotreeConfig.mappings|nil ({}) define keymaps for filter popup window in fuzzy_finder_mode
+---@field relative "editor"|"win"|nil ("editor") Specifies where to create split window.
 
 ---@class NeotreeConfig.mapping_options
 ---@field nowait boolean|nil (true) disable `nowait` if you have existing combos starting with this char that you want to use
 ---@field noremap boolean|nil (true)
+---@field text string|nil ("") name shown in help menu
+---@field desc string|nil ("") description
+---@field func NeotreeConfig.mapping_function|nil
+---@field vfunc NeotreeConfig.mapping_function|nil
+---@field command NeotreeConfig.mapping_command|nil ("")
 
----@alias NeotreeConfig.mapping_table { [1]: string, config: table<string, any> } | NeotreeConfig.mapping_options
----@alias NeotreeConfig.mapping_function fun(state: NeotreeState)
----@alias NeotreeConfig.mappings table<string, string | NeotreeConfig.mapping_table | NeotreeConfig.mapping_function>
+---@alias NeotreeConfig.mapping_key string
+---@alias NeotreeConfig.mapping_command string
+---@alias NeotreeConfig.mapping_table { [1]: NeotreeConfig.mapping_command, config: table<string, any> } | NeotreeConfig.mapping_options
+---@alias NeotreeConfig.mapping_function fun(state: NeotreeState, nodes: NuiTreeNode[]|nil)
+---@alias NeotreeConfig.mappings table<NeotreeConfig.mapping_key, NeotreeConfig.mapping_command|NeotreeConfig.mapping_table|NeotreeConfig.mapping_function>
+---@alias NeotreeConfig.command_table table<NeotreeConfig.mapping_command, NeotreeConfig.mapping_function>
+---@alias NeotreeConfig.resolved_mappings table<NeotreeConfig.mapping_key, NeotreeConfig.mapping_options|string>
 
 ---@class NeotreeConfig.source_config
 ---@field name string
 ---@field display_name string
 ---@field window NeotreeConfig.window|nil
 ---@field renderers NeotreeConfig.renderers|nil
----@field commands NeotreeConfig.mappings|nil
+---@field commands NeotreeConfig.command_table|nil
 ---@field components NeotreeConfig.components|nil
 
 ---@class NeotreeConfig.filesystem : NeotreeConfig.source_config

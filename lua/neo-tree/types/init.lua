@@ -15,10 +15,12 @@
 
 ---@alias NeotreeTypes.sort_function fun(a: NeotreeNode, b: NeotreeNode): boolean
 ---@alias NeotreeConfig.highlight string # Name of a highlight group
----@alias NeotreeConfig.wh integer|string|nil
+---@alias NeotreeConfig.wh integer|string|(fun(node: NuiTreeNode|NeotreeSourceItem, state:NeotreeState): number)|nil
 ---@alias NeotreeConfig.log_level "trace"|"debug"|"info"|"warn"|"error"|"fatal"
 ---@alias NeotreeConfig.diagnostics_keys "hint"|"info"|"warn"|"error"
 ---@alias NeotreeConfig.components.align "left"|"right"
 
 ---@alias NeotreeSourceName string # Unique name for each registered source.
 ---@alias NeotreeSource table # TODO: Define what is required to be a neo-tree source
+
+---@alias NeotreeCursorPos { [1]: integer|nil, [2]: integer|nil } # (1,0)-indexed cursor position in the window.

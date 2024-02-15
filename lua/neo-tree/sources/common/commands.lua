@@ -669,10 +669,12 @@ M.focus_preview = function()
 end
 
 ---Expands or collapses the current node.
+---@param state NeotreeState
+---@param toggle_directory fun(node: NuiTree.Node)
 M.toggle_node = function(state, toggle_directory)
   local tree = state.tree
   local node = tree:get_node()
-  if not utils.is_expandable(node) then
+  if not node or not utils.is_expandable(node) then
     return
   end
   if node.type == "directory" and toggle_directory then

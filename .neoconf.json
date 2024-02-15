@@ -1,0 +1,20 @@
+{
+  "neodev": {
+    "library": {
+      "enabled": true,
+      "plugins": [
+        "neodev.nvim",
+        "pathlib.nvim",
+        "nui.nvim",
+        "nvim-nio"
+      ]
+    }
+  },
+  "neoconf": {
+    "plugins": {
+      "lua_ls": {
+        "enabled": true
+      }
+    }
+  }
+}

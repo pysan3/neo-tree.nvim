@@ -3,9 +3,10 @@
 ---@type NeotreeConfig
 local config = {
   sources = {
-    "filesystem",
-    "buffers",
-    "git_status",
+    "filetree",
+    -- "filesystem",
+    -- "buffers",
+    -- "git_status",
     -- "document_symbols",
   },
   add_blank_line_at_top = false,
@@ -37,6 +38,7 @@ local config = {
   sort_function = nil,
   use_popups_for_input = true,
   use_default_mappings = true,
+  share_state_among_tabs = false,
 }
 
 ---@type NeotreeConfig.source_selector
@@ -238,7 +240,7 @@ config.nesting_rules = {}
 ---}                         |  }                        |      end
 ---
 ---see `:h neo-tree-custom-commands-global`
----@type NeotreeConfig.mappings
+---@type NeotreeConfig.command_table
 config.commands = {}
 
 ---@type NeotreeConfig.window
@@ -267,6 +269,7 @@ config.window = {
       "toggle_node",
       nowait = false,
     },
+    ["b"] = { "toggle_node" },
     ["<2-LeftMouse>"] = "open",
     ["<cr>"] = "open",
     -- ["<cr>"] = { "open", config = { expand_nested_files = true } }, -- expand nested file takes precedence
@@ -527,5 +530,7 @@ config.document_symbols = {
 ---@type NeotreeConfig.event_handler[]
 ---@see https://github.com/nvim-neo-tree/neo-tree.nvim/wiki/Recipes#events for examples.
 config.event_handlers = {}
+
+config.filetree = config.filesystem
 
 return config

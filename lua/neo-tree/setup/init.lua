@@ -80,6 +80,8 @@ function M.define_events()
   defauc(events.VIM_INSERT_LEAVE, { "InsertLeave" }, 200)
   defauc(events.VIM_LEAVE, { "VimLeavePre" })
   defauc(events.VIM_RESIZED, { "VimResized" }, 100)
+  defauc(events.VIM_TAB_ENTER, { "TabEnter" })
+  defauc(events.VIM_TAB_NEW_ENTERED, { "TabNewEntered" })
   defauc(events.VIM_TAB_CLOSED, { "TabClosed" })
   defauc(events.VIM_TERMINAL_ENTER, { "TermEnter" }, 0)
   defauc(events.VIM_TEXT_CHANGED_NORMAL, { "TextChanged" }, 200)
@@ -478,6 +480,46 @@ end
 ---@param is_auto_config boolean|nil # When true, this function is called for testing. Skip changes to vim state.
 ---@return NeotreeConfig
 M.merge_config = function(user_config, is_auto_config)
+  user_config = vim.deepcopy(user_config or {})
+  log.trace("merge_config called: ", is_auto_config)
+
+  local migrations = require("neo-tree.setup.deprecations").migrate(user_config)
+  if #migrations > 0 then
+    -- defer to make sure it is the last message printed
+    vim.defer_fn(function()
+      vim.cmd(
+        "echohl WarningMsg | echo 'Some options have changed, please run `:Neotree migrations` to see the changes' | echohl NONE"
+      )
+    end, 50)
+  end
+
+  if user_config.log_level ~= nil then
+    log.set_level(user_config.log_level)
+  end
+  log.use_file(user_config.log_to_file, true)
+  log.debug("setup")
+
+  events.clear_all_events()
+  M.define_events()
+
+  -- Prevent accidentally opening another file in the neo-tree window.
+  events.subscribe({
+    event = events.VIM_BUFFER_ENTER,
+    handler = M.buffer_enter_event,
+  })
+
+  local mgr = require("neo-tree.manager")
+  local all_source_names = mgr.setup(user_config)
+  require("neo-tree.command.parser").setup(all_source_names)
+  mgr.new(user_config, vim.api.nvim_get_current_tabpage())
+  return user_config
+end
+
+---Merge user config with default values,
+---@param user_config NeotreeConfig
+---@param is_auto_config boolean|nil # When true, this function is called for testing. Skip changes to vim state.
+---@return NeotreeConfig
+M.merge_config2 = function(user_config, is_auto_config)
   local default_config = vim.deepcopy(require("neo-tree.defaults"))
   user_config = vim.deepcopy(user_config or {})
   log.trace("merge_config called: %s", is_auto_config)

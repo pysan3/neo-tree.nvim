@@ -339,11 +339,17 @@ local one_line = function(text)
   end
 end
 
-M.render_component = function(component, item, state, remaining_width)
+---@param component NeotreeComponentBase
+---@param item NuiTreeNode|NeotreeSourceItem
+---@param state NeotreeState
+---@param render_args NeotreeStateRenderArgs
+---@return NeotreeComponentResult[]
+---@return integer|nil wanted_width
+M.render_component = function(component, item, state, render_args)
   local component_func = state.components[component[1]]
   if component_func then
     local success, component_data, wanted_width =
-      pcall(component_func, component, item, state, remaining_width)
+      pcall(component_func, component, item, state, render_args)
     if success then
       if component_data == nil then
         return { {} }
@@ -694,8 +700,20 @@ M.position = {
 }
 
 ---Redraw the tree without relaoding from the source.
+---@param state NeotreeState
+---@param curpos NeotreeCursorPos|nil # Set cursor position. (row, col)
+M.redraw = function (state, curpos)
+  vim.schedule(function ()
+    local mgr = require("neo-tree.manager").get_current()
+    if mgr then
+      mgr:redraw(state, curpos)
+    end
+  end)
+end
+
+---Redraw the tree without relaoding from the source.
 ---@param state table State of the tree.
-M.redraw = function(state)
+M.redraw2 = function(state)
   if state.tree and M.tree_is_visible(state) then
     log.trace("Redrawing tree", state.name, state.id)
     -- every now and then this will fail because the window was closed in
@@ -709,6 +727,7 @@ M.redraw = function(state)
     end
   end
 end
+
 ---Visit all nodes ina tree recursively and reduce to a single value.
 ---@param tree table NuiTree
 ---@param memo any Value that is passed to the accumulator function

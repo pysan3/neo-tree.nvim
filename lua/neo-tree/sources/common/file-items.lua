@@ -92,17 +92,23 @@ end
 
 local create_item, set_parents
 
-function create_item(context, path, _type, bufnr)
+function create_item(file_item_context, path, _type, bufnr)
   local parent_path, name = utils.split_path(path)
   local id = path
   if path == "[No Name]" and bufnr then
-    parent_path = context.state.path
+    parent_path = file_item_context.state.path
     name = "[No Name]"
     id = tostring(bufnr)
   else
     -- avoid creating duplicate items
-    if context.folders[path] or context.nesting[path] or context.item_exists[path] then
-      return context.folders[path] or context.nesting[path] or context.item_exists[path]
+    if
+      file_item_context.folders[path]
+      or file_item_context.nesting[path]
+      or file_item_context.item_exists[path]
+    then
+      return file_item_context.folders[path]
+        or file_item_context.nesting[path]
+        or file_item_context.item_exists[path]
     end
   end
 
@@ -132,9 +138,9 @@ function create_item(context, path, _type, bufnr)
   if item.type == "directory" then
     item.children = {}
     item.loaded = false
-    context.folders[path] = item
-    if context.state.search_pattern then
-      table.insert(context.state.default_expanded_nodes, item.id)
+    file_item_context.folders[path] = item
+    if file_item_context.state.search_pattern then
+      table.insert(file_item_context.state.default_expanded_nodes, item.id)
     end
   else
     item.base = item.name:match("^([-_,()%s%w%i]+)%.")
@@ -146,14 +152,14 @@ function create_item(context, path, _type, bufnr)
     if nesting_callback ~= nil then
       item.children = {}
       item.nesting_callback = nesting_callback
-      context.nesting[path] = item
+      file_item_context.nesting[path] = item
     end
   end
 
-  item.is_reveal_target = (path == context.path_to_reveal)
-  local state = context.state
+  item.is_reveal_target = (path == file_item_context.path_to_reveal)
+  local state = file_item_context.state
   local f = state.filtered_items
-  local is_not_root = not utils.is_subpath(path, context.state.path)
+  local is_not_root = not utils.is_subpath(path, file_item_context.state.path)
   if f and is_not_root then
     if f.never_show[name] then
       item.filtered_by = item.filtered_by or {}
@@ -187,42 +193,42 @@ function create_item(context, path, _type, bufnr)
     -- NOTE: git_ignored logic moved to job_complete
   end
 
-  set_parents(context, item)
-  if context.all_items == nil then
-    context.all_items = {}
+  set_parents(file_item_context, item)
+  if file_item_context.all_items == nil then
+    file_item_context.all_items = {}
   end
   if is_not_root then
-    table.insert(context.all_items, item)
+    table.insert(file_item_context.all_items, item)
   end
   return item
 end
 
 -- function to set (or create) parent folder
-function set_parents(context, item, siblings)
+function set_parents(file_item_context, item, siblings)
   -- we can get duplicate items if we navigate up with open folders
   -- this is probably hacky, but it works
-  if context.item_exists[item.id] then
+  if file_item_context.item_exists[item.id] then
     return
   end
   if not item.parent_path then
     return
   end
 
-  local parent = context.folders[item.parent_path]
+  local parent = file_item_context.folders[item.parent_path]
   if not utils.truthy(item.parent_path) then
     return
   end
   if parent == nil then
     local success
-    success, parent = pcall(create_item, context, item.parent_path, "directory")
+    success, parent = pcall(create_item, file_item_context, item.parent_path, "directory")
     if not success then
       log.error("error creating item for ", item.parent_path)
     end
-    context.folders[parent.id] = parent
-    set_parents(context, parent)
+    file_item_context.folders[parent.id] = parent
+    set_parents(file_item_context, parent)
   end
   table.insert(parent.children, item)
-  context.item_exists[item.id] = true
+  file_item_context.item_exists[item.id] = true
 
   if item.filtered_by == nil and type(parent.filtered_by) == "table" then
     item.filtered_by = vim.deepcopy(parent.filtered_by)
@@ -233,15 +239,15 @@ end
 ---@param state table|nil The state of the file-items.
 ---@return table
 local create_context = function(state)
-  local context = {}
+  local file_item_context = {}
   -- Make the context a weak table so that it can be garbage collected
-  --setmetatable(context, { __mode = 'v' })
-  context.state = state
-  context.folders = {}
-  context.nesting = {}
-  context.item_exists = {}
-  context.all_items = {}
-  return context
+  --setmetatable(file_item_context, { __mode = 'v' })
+  file_item_context.state = state
+  file_item_context.folders = {}
+  file_item_context.nesting = {}
+  file_item_context.item_exists = {}
+  file_item_context.all_items = {}
+  return file_item_context
 end
 
 return {

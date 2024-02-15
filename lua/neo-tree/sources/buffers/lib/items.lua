@@ -13,14 +13,14 @@ M.get_opened_buffers = function(state)
     return
   end
   state.loading = true
-  local context = file_items.create_context()
-  context.state = state
+  local file_item_context = file_items.create_context()
+  file_item_context.state = state
   -- Create root folder
-  local root = file_items.create_item(context, state.path, "directory")
+  local root = file_items.create_item(file_item_context, state.path, "directory")
   root.name = vim.fn.fnamemodify(root.path, ":~")
   root.loaded = true
   root.search_pattern = state.search_pattern
-  context.folders[root.path] = root
+  file_item_context.folders[root.path] = root
   local terminals = {}
 
   local function add_buffer(bufnr, path)
@@ -31,7 +31,7 @@ M.get_opened_buffers = function(state)
         if path == "" then
           path = "[No Name]"
         end
-        local success, item = pcall(file_items.create_item, context, path, "file", bufnr)
+        local success, item = pcall(file_items.create_item, file_item_context, path, "file", bufnr)
         if success then
           item.extra = {
             bufnr = bufnr,
@@ -93,7 +93,7 @@ M.get_opened_buffers = function(state)
       loaded = true,
       search_pattern = state.search_pattern,
     }
-    context.folders["Terminals"] = terminal_root
+    file_item_context.folders["Terminals"] = terminal_root
     if state.terminals_first then
       table.insert(root_folders, 1, terminal_root)
     else
@@ -101,7 +101,7 @@ M.get_opened_buffers = function(state)
     end
   end
   state.default_expanded_nodes = {}
-  for id, _ in pairs(context.folders) do
+  for id, _ in pairs(file_item_context.folders) do
     table.insert(state.default_expanded_nodes, id)
   end
   file_items.advanced_sort(root.children, state)

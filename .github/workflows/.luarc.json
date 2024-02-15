@@ -3,16 +3,33 @@
   "runtime.version": "LuaJIT",
   "runtime.path": [
     "lua/?.lua",
-    "lua/?/init.lua"
+    "lua/?/init.lua",
+    "${3rd}/busted/library/?.lua",
+    "${3rd}/busted/library/?/init.lua"
   ],
   "workspace.library": [
-    "/github/workspace/lua/neo-tree/types",
-    "/github/workspace/deps/neodev.nvim/types/stable",
-    "/github/workspace/deps/plenary.nvim/lua",
-    "/github/workspace/deps/nui.nvim/lua",
-    "/github/workspace/deps/nvim-web-devicons/lua",
-    "${3rd}/busted/library"
+    "/home/runner/work/neo-tree.nvim/neo-tree.nvim/lua/neo-tree/types",
+    "/home/runner/work/neo-tree.nvim/neo-tree.nvim/deps/neodev.nvim/types/stable",
+    "/home/runner/work/neo-tree.nvim/neo-tree.nvim/deps/plenary.nvim/lua",
+    "/home/runner/work/neo-tree.nvim/neo-tree.nvim/deps/nui.nvim/lua",
+    "/home/runner/work/neo-tree.nvim/neo-tree.nvim/deps/nvim-web-devicons/lua",
+    "/home/runner/work/neo-tree.nvim/neo-tree.nvim/deps/nvim-nio/lua",
+    "/home/runner/work/neo-tree.nvim/neo-tree.nvim/deps/pathlib.nvim/lua",
+    "${3rd}/busted/library",
+    "${3rd}/luassert/library"
   ],
+  "diagnostics.globals": [
+    "describe",
+    "assert",
+    "it",
+    "vim",
+    "setup",
+    "teardown"
+  ],
+  "runtime.special": {
+    "luassert": "loadfile"
+  },
+  "workspace.maxPreload": 100000,
   "diagnostics.libraryFiles": "Disable",
-  "workspace.checkThirdParty": "Disable"
+  "workspace.checkThirdParty": false
 }

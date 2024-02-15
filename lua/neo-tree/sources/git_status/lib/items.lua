@@ -15,17 +15,17 @@ M.get_git_status = function(state)
   state.loading = true
   local status_lookup, project_root = git.status(state.git_base, true)
   state.path = project_root or state.path or vim.fn.getcwd()
-  local context = file_items.create_context()
-  context.state = state
+  local file_item_context = file_items.create_context()
+  file_item_context.state = state
   -- Create root folder
-  local root = file_items.create_item(context, state.path, "directory")
+  local root = file_items.create_item(file_item_context, state.path, "directory")
   root.name = vim.fn.fnamemodify(root.path, ":~")
   root.loaded = true
   root.search_pattern = state.search_pattern
-  context.folders[root.path] = root
+  file_item_context.folders[root.path] = root
 
   for path, status in pairs(status_lookup) do
-    local success, item = pcall(file_items.create_item, context, path, "file")
+    local success, item = pcall(file_items.create_item, file_item_context, path, "file")
     item.status = status
     if success then
       item.extra = {
@@ -38,7 +38,7 @@ M.get_git_status = function(state)
 
   state.git_status_lookup = status_lookup
   state.default_expanded_nodes = {}
-  for id, _ in pairs(context.folders) do
+  for id, _ in pairs(file_item_context.folders) do
     table.insert(state.default_expanded_nodes, id)
   end
   file_items.advanced_sort(root.children, state)

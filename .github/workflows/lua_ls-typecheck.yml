@@ -39,11 +39,17 @@ jobs:
           repository: "MunifTanjim/nui.nvim"
           path: "deps/nui.nvim"
 
+      - name: Checkout dependency pathlib
+        uses: actions/checkout@v3
+        with:
+          repository: "pysan3/pathlib.nvim"
+          path: "deps/pathlib.nvim"
+
       - name: Print Filetree
-        run: ls -la && ls -la deps
+        run: echo $PWD && ls -la && ls -la deps
 
       - name: Type Check Code Base
-        uses: mrcjkb/lua-typecheck-action@v0.1.2
+        uses: mrcjkb/lua-typecheck-action@v0
         with:
           configpath: .github/workflows/.luarc.json
           directories: |
@@ -51,3 +57,6 @@ jobs:
             lua/neo-tree/log.lua
             lua/neo-tree/setup/deprecations.lua
             lua/neo-tree/setup/init.lua
+            lua/neo-tree/sources/base
+            lua/neo-tree/sources/filetree
+            lua/neo-tree/manager

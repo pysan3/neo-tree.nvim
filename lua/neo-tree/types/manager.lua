@@ -1,0 +1,24 @@
+---@class NeotreeManager.source_info
+---@field is_internal boolean
+---@field module_path string
+---@field setup_is_done boolean
+---@field source_config NeotreeConfig.source_config|nil
+
+---@class NeotreeManagerNavigateArgs
+---@field action "close"|"focus"|"show"|"toggle"|"closeall"|"toggleall"
+---@field source string|"last"
+---@field position NeotreeWindowPosition|nil
+---@field scope NeotreeStateScope|nil
+---@field toggle boolean
+---@field reveal boolean
+---@field reveal_file NeotreePathString|nil
+---@field dir NeotreePathString
+---@field id NeotreeStateId|nil
+
+---@class NeotreeManagerSearchArgs
+---@field id string|nil # Is set if user specifies id in command
+---@field position NeotreeWindowPosition|nil
+---@field scope NeotreeStateScope|nil
+---@field reveal_file string|nil # Points to file to reveal on start.
+---@field dir string|nil # Target dir
+---@field search boolean|nil # On if requested for search mode

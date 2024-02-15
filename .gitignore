@@ -46,3 +46,6 @@ tags
 # Others
 .testcache
 luacov.*.out
+/luarocks
+/lua_modules
+/.luarocks

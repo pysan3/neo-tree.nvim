@@ -368,6 +368,12 @@ local stat_providers = {
   default = function(node)
     return vim.loop.fs_stat(node.path)
   end,
+  pathlib = function(node)
+    return node.pathlib:stat(false)
+  end,
+  pathlib_follow_symlink = function(node)
+    return node.pathlib:stat(true)
+  end,
 }
 
 --- Gets the statics for a node in the file system. The `stat` object will be cached
