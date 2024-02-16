@@ -11,11 +11,11 @@ function M.check_nio_install()
   return not not M._has_nio
 end
 
-function M.run(func)
+function M.run(func, cb)
   if not M.check_nio_install() then
     return func()
   else
-    return M.nio.run(func)
+    return M.nio.run(func, cb)
   end
 end
 

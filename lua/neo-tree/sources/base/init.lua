@@ -37,6 +37,7 @@ local ui_rndr = require("neo-tree.ui.renderer")
 ---@field level integer|nil
 ---@field is_last_child boolean|nil
 ---@field children NeotreeSourceItem[]|nil
+---@field pathlib PathlibPath
 
 local locals = {} -- Functions exported for test purposes
 
@@ -133,19 +134,30 @@ end
 ---@param curpos NeotreeCursorPos|nil
 function Source:redraw(manager, request_window_width, curpos)
   nio.elapsed("inside source:redraw", manager.__timer_start)
-  self:add_task(function()
-    nio.elapsed("inside add_task", manager.__timer_start)
-    self._tree_lock.acquire()
-    nio.elapsed("inside modify_tree", manager.__timer_start)
-    vim.schedule(function()
-      self:render_tree(self.tree)
-      nio.elapsed("after render_tree", manager.__timer_start)
+  self:add_task(
+    function()
+      nio.elapsed("inside add_task", manager.__timer_start)
+      self._tree_lock.acquire()
+      nio.elapsed("inside modify_tree", manager.__timer_start)
+      vim.schedule(function()
+        self:render_tree(self.tree)
+        nio.elapsed("after render_tree", manager.__timer_start)
+        self._tree_lock.release()
+      end)
+      self:modify_tree(function()
+        nio.elapsed("tree recaptured", manager.__timer_start)
+      end)
+    end,
+    "render_tree",
+    function(success)
+      if not success then
+        vim.schedule(function()
+          vim.print("render_tree failed")
+        end)
+      end
       self._tree_lock.release()
-    end)
-    self:modify_tree(function(tree)
-      nio.elapsed("tree recaptured", manager.__timer_start)
-    end)
-  end, "render_tree")
+    end
+  )
   nio.run(function()
     nio.elapsed("start watching for render_tree", manager.__timer_start)
     self:wait_only_last_task("render_tree")
@@ -369,11 +381,12 @@ function Source:modify_tree(cb)
   if not self._tree_lock then
     self._tree_lock = nio.semaphore(1)
   end
+  print(debug.traceback("Before acquire"))
   self._tree_lock.acquire()
-  -- print(debug.traceback("In tree lock"))
+  print(debug.traceback("Got access to tree"))
   cb(self.tree)
+  print(debug.traceback("CB done"))
   self._tree_lock.release()
-  -- print(debug.traceback("Out tree lock"))
 end
 
 ---Filter items and separate into 2 tables: `visible` and `hidden`.
@@ -531,7 +544,7 @@ end
 
 ---@param func function # Function called as a nio task. Job will be captured to `batch_name` task list.
 ---@param batch_name string|nil # Unique name for batch. If nil, refers to global task list.
-function Source:add_task(func, batch_name)
+function Source:add_task(func, batch_name, cb)
   if not self._workers then
     self._workers = {}
   end
@@ -541,7 +554,7 @@ function Source:add_task(func, batch_name)
   end
   local _batch = self._workers[batch_name]
   _batch.index = _batch.index + 1
-  _batch[_batch.index] = nio.run(func)
+  _batch[_batch.index] = nio.run(func, cb or function() end)
   return _batch[_batch.index]
 end
 

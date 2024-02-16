@@ -190,8 +190,12 @@ function Filetree:navigate(dir, path_to_reveal, window_width, manager, failed_ar
   --   window_width.strict = true
   -- end
   if not path_to_reveal then
-    path_to_reveal = self.dir
-      / "drivers/gpu/drm/nouveau/include/nvrm/535.113.01/common/sdk/nvidia/inc/ctrl/ctrl0073/ctrl0073specific.h"
+    if self.dir:basename() == "linux" then
+      path_to_reveal = self.dir
+        / "drivers/gpu/drm/nouveau/include/nvrm/535.113.01/common/sdk/nvidia/inc/ctrl/ctrl0073/ctrl0073specific.h"
+    else
+      path_to_reveal = self.dir / "lua/neo-tree/sources/document_symbols/lib/client_filters.lua"
+    end
   end
   if path_to_reveal then
     self:add_task(function()
@@ -285,8 +289,10 @@ function locals.new_node(path, level)
     show_gitignored = false,
   }
   if stat_type == "symlink" then
+    local real_path = path:realpath()
     item.is_link = true
-    item.link_to = path:realpath():tostring()
+    item.link_to = real_path:tostring()
+    item.link_type = (real_path:stat(false) or {}).type
   end
   return NuiTree.Node(item, {})
 end
@@ -308,12 +314,10 @@ function Filetree:fill_tree(parent_id, depth, reveal_path)
       depth = math.max(depth, reveal_path:len() - cwd_len)
       local __old_skip_dir = skip_dir
       skip_dir = function(dir)
-        if __old_skip_dir(dir) then
-          return true
-        elseif dir:len() - cwd_len <= old_depth then
+        if vim.startswith(reveal_string, dir:tostring()) then
           return false
         end
-        return not vim.startswith(reveal_string, dir:tostring())
+        return dir:len() - cwd_len >= old_depth or __old_skip_dir(dir)
       end
     end
     if self.config.scan_mode == "deep" then
@@ -321,11 +325,6 @@ function Filetree:fill_tree(parent_id, depth, reveal_path)
       depth = nil
       local __old_skip_dir = skip_dir
       skip_dir = function(dir)
-        if __old_skip_dir(dir) then
-          return true
-        elseif dir:len() - cwd_len < old_depth then
-          return false
-        end
         for child in dir:fs_iterdir(false, 1) do
           local name = child:basename()
           if
@@ -340,6 +339,7 @@ function Filetree:fill_tree(parent_id, depth, reveal_path)
             return true
           end
         end
+        return dir:len() - cwd_len >= old_depth or __old_skip_dir(dir)
       end
     end
     local tasks_name = string.format("fill_tree-%s-%s", depth, reveal_path)
@@ -349,10 +349,13 @@ function Filetree:fill_tree(parent_id, depth, reveal_path)
     if root and not root.loaded then
       for path in root.pathlib:fs_iterdir(false, depth, skip_dir) do
         self:add_task(function()
-          local node = locals.new_node(path, path:len() - cwd_len)
+          local node = tree:get_node(path:tostring())
+          if not node then
+            node = locals.new_node(path, path:len() - cwd_len)
+            local _parent = node.pathlib:parent_string()
+            table.insert(nodes[_parent], node)
+          end
           node.is_reveal_target = reveal_path and path == reveal_path or false
-          local _parent = node.pathlib:parent_string()
-          table.insert(nodes[_parent], node)
         end, tasks_name)
       end
     end
@@ -368,7 +371,12 @@ function Filetree:fill_tree(parent_id, depth, reveal_path)
     end
   end) -- release tree lock
   if self.use_libuv_file_watcher then
-    self:register_file_watchers()
+    self:modify_tree(function(tree)
+      local node_table = tree.nodes.by_id --[[@as table<any, NeotreeSourceItem>]]
+      for _, node in pairs(node_table) do
+        self:assign_file_watcher(node.pathlib)
+      end
+    end)
   end
 end
 
@@ -399,28 +407,35 @@ function locals.update_tree_rename(tree, parent, filename)
   tree:add_node(new, parent:tostring())
 end
 
-function Filetree:register_file_watchers()
-  self:modify_tree(function(tree)
-    for _, node in pairs(tree.nodes.by_id) do
-      node.pathlib:register_watcher(self.id .. "luv_filewatcher", function(_p, args)
-        vim.print(string.format([[_p: %s]], _p))
-        local dir = args.dir
-        args.dir = nil
-        vim.print(string.format([[args (except dir): %s]], vim.inspect(args)))
-        args.dir = dir
-        vim.print(string.format([[args.dir: %s]], args.dir))
-        if args.events.change then
-          -- file has been modified
-        end
-        if args.events.rename then
-          -- file has been moved or created
-          self:modify_tree(function(_tree)
-            locals.update_tree_rename(_tree, args.dir, args.filename)
-          end)
-        end
-        -- events.fire_event(events.FS_EVENT, { afile = _p:tostring() })
+---A helper function to assign file watcher to rerender on file update to `pathlib`.
+---@param pathlib PathlibPath
+function Filetree:assign_file_watcher(pathlib)
+  pathlib:register_watcher(self.id .. "luv_filewatcher", function(_p, args)
+    vim.print(string.format([[_p: %s]], _p))
+    local dir = args.dir
+    args.dir = nil
+    vim.print(string.format([[args (except dir): %s]], vim.inspect(args)))
+    args.dir = dir
+    vim.print(string.format([[args.dir: %s]], args.dir))
+    if args.events.change then
+      -- file has been modified
+    end
+    if args.events.rename and _p:basename() == args.filename then -- file has been removed
+      self:modify_tree(function(_tree)
+        local removed = _tree:remove_node(_p:tostring())
+        removed.pathlib:unregister_watcher()
+        self:visualize_tree()
+      end)
+    elseif args.events.rename and _p == args.dir then -- file has been added
+      self:modify_tree(function(_tree)
+        local new_path = _p:child(args.filename)
+        self:assign_file_watcher(new_path)
+        local new_node = locals.new_node(new_path, new_path:len() - self.dir:len())
+        _tree:add_node(new_node, _p:tostring())
       end)
     end
+    renderer.redraw(self)
+    -- events.fire_event(events.FS_EVENT, { afile = _p:tostring() })
   end)
 end
 
