@@ -190,12 +190,12 @@ function Filetree:navigate(dir, path_to_reveal, window_width, manager, failed_ar
   --   window_width.strict = true
   -- end
   if not path_to_reveal then
-    if self.dir:basename() == "linux" then
-      path_to_reveal = self.dir
-        / "drivers/gpu/drm/nouveau/include/nvrm/535.113.01/common/sdk/nvidia/inc/ctrl/ctrl0073/ctrl0073specific.h"
-    else
-      path_to_reveal = self.dir / "lua/neo-tree/sources/document_symbols/lib/client_filters.lua"
-    end
+    -- if self.dir:basename() == "linux" then
+    --   path_to_reveal = self.dir
+    --     / "drivers/gpu/drm/nouveau/include/nvrm/535.113.01/common/sdk/nvidia/inc/ctrl/ctrl0073/ctrl0073specific.h"
+    -- else
+    --   path_to_reveal = self.dir / "lua/neo-tree/sources/document_symbols/lib/client_filters.lua"
+    -- end
   end
   if path_to_reveal then
     self:add_task(function()
@@ -352,7 +352,7 @@ function Filetree:fill_tree(parent_id, depth, reveal_path)
           local node = tree:get_node(path:tostring())
           if not node then
             node = locals.new_node(path, path:len() - cwd_len)
-            local _parent = node.pathlib:parent_string()
+            local _parent = node.pathlib:parent_assert():tostring()
             table.insert(nodes[_parent], node)
           end
           node.is_reveal_target = reveal_path and path == reveal_path or false
