@@ -105,7 +105,7 @@ end
 ---@param curpos NeotreeCursorPos|nil # Set cursor position. (row, col)
 function Manager:redraw(state, curpos)
   self.__timer_start = os.clock()
-  if state.bufnr then
+  if state.bufnr and vim.api.nvim_buf_is_loaded(state.bufnr) then
     vim.api.nvim_create_autocmd("CursorMoved", {
       once = true,
       desc = "Neo-tree: monitor cursor movement from user.",
@@ -116,10 +116,10 @@ function Manager:redraw(state, curpos)
         end
       end,
     })
+    nio.run(function()
+      state:redraw(self, nil, curpos)
+    end)
   end
-  nio.run(function()
-    state:redraw(self, nil, curpos)
-  end)
 end
 
 ---Generate key to lookup in `self.window_lookup`.
