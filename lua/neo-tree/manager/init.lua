@@ -242,7 +242,7 @@ function Manager:done(state, requested_window_width, requested_curpos)
     nio.elapsed("get posid", self.__timer_start)
     local jump_before = self:generate_jump_before_info()
     nio.elapsed("after generate_jump_before_info", self.__timer_start)
-    local window = self:create_win(posid, position, state, requested_window_width, "TODO", true)
+    local window = self:create_win(posid, position, state, requested_window_width, "TODO", false)
     nio.elapsed("after create_win", self.__timer_start)
     local new_posid = locals.get_posid(position, window.winid)
     nio.elapsed("get new posid", self.__timer_start)
@@ -412,7 +412,7 @@ function Manager:search_state(source_name, args, tabid)
     id = "TODO: RANDOM"
   end
   local state = self:get_state(id, tabid)
-    or self:set_state(mod.new(info.source_config, id, args.dir), tabid) -- or register `mod.new`
+    or self:set_state(mod.new(info.source_config, id, args.dir), tabid) -- register `mod.new`
   return state
 end
 

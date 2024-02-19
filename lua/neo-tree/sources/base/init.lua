@@ -381,11 +381,11 @@ function Source:modify_tree(cb)
   if not self._tree_lock then
     self._tree_lock = nio.semaphore(1)
   end
-  print(debug.traceback("Before acquire"))
   self._tree_lock.acquire()
-  print(debug.traceback("Got access to tree"))
   cb(self.tree)
+  print("================================")
   print(debug.traceback("CB done"))
+  print("================================")
   self._tree_lock.release()
 end
 

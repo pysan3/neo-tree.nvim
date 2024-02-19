@@ -417,8 +417,7 @@ function Filetree:assign_file_watcher(pathlib)
     vim.print(string.format([[args (except dir): %s]], vim.inspect(args)))
     args.dir = dir
     vim.print(string.format([[args.dir: %s]], args.dir))
-    if args.events.change then
-      -- file has been modified
+    if args.events.change then -- file has been modified
     end
     if args.events.rename and _p:basename() == args.filename then -- file has been removed
       self:modify_tree(function(_tree)
