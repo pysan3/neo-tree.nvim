@@ -421,8 +421,7 @@ function Filetree:assign_file_watcher(pathlib)
     end
     if args.events.rename and _p:basename() == args.filename then -- file has been removed
       self:modify_tree(function(_tree)
-        local removed = _tree:remove_node(_p:tostring())
-        removed.pathlib:unregister_watcher()
+        self:remove_node_recursive(_p:tostring())
         self:visualize_tree()
       end)
     elseif args.events.rename and _p == args.dir then -- file has been added
@@ -431,11 +430,30 @@ function Filetree:assign_file_watcher(pathlib)
         self:assign_file_watcher(new_path)
         local new_node = locals.new_node(new_path, new_path:len() - self.dir:len())
         _tree:add_node(new_node, _p:tostring())
+        if new_path:is_dir(true) then
+          self:fill_tree(new_node:get_id(), nil, nil)
+        end
       end)
     end
     renderer.redraw(self)
     -- events.fire_event(events.FS_EVENT, { afile = _p:tostring() })
   end)
+end
+
+function Filetree:remove_node_recursive(node_id)
+  ---@type NuiTreeNode|NeotreeSourceItem|nil
+  local node = self.tree:get_node(node_id)
+  if not node then
+    return
+  end
+  if node:has_children() then
+    for _, child_id in ipairs(node:get_child_ids()) do
+      self:remove_node_recursive(child_id)
+    end
+  end
+  node.pathlib:unregister_watcher()
+  node.pathlib = nil
+  self.tree:remove_node(node_id)
 end
 
 ---Expands or collapses the current node.
