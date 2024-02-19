@@ -557,6 +557,17 @@ function Manager.setup(user_config)
     Manager.share_state_among_tabs = false
   end
   local sources = user_config.sources or default_config.sources or {}
+  -- TODO: Remove me on real release.
+  if sources[1] ~= "filetree" or #sources ~= 1 then
+    log.warn("TESTING BRANCH. You've only got one source option: filetree.")
+    table.insert(sources, 1, "dummy")
+    for _, source in ipairs(sources) do
+      if string.find(source, ".", nil, true) then -- External sources, I accept you.
+        sources[#sources + 1] = source
+      end
+    end
+    table.insert(sources, 1, "filetree")
+  end
   Manager.set_sources(sources)
   Manager.default_source = locals.name_from_source(sources[1])
   for source_name, info in pairs(Manager.source_lookup) do
