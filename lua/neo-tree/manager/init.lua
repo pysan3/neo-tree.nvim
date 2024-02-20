@@ -727,7 +727,7 @@ function Manager.setup(user_config)
         user_source_config.renderers or {}
       )
       -- copy remaining config values
-      for key, value in pairs(default_config[source_name] or {}) do
+      for key, value in pairs(default_source_config) do
         ---@cast value any
         if not info.source_config[key] then
           if type(value) == "table" then

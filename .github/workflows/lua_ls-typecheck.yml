@@ -45,6 +45,12 @@ jobs:
           repository: "MunifTanjim/nui.nvim"
           path: "deps/nui.nvim"
 
+      - name: Checkout dependency nio
+        uses: actions/checkout@v3
+        with:
+          repository: "nvim-neotest/nvim-nio"
+          path: "deps/nvim-nio"
+
       - name: Checkout dependency pathlib
         uses: actions/checkout@v3
         with:

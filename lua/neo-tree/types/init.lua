@@ -24,4 +24,4 @@
 ---@alias NeotreeSource table # TODO: Define what is required to be a neo-tree source
 
 ---@class NeotreeCursorPos : vim.fn.winrestview.dict
----@field is { restorable: boolean } # deprecated
+---@field is? { restorable: boolean? } # deprecated
