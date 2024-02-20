@@ -23,7 +23,7 @@ local function get_folder_node(state)
 
   while node do
     local insert_as_local = state.config.insert_as
-    local insert_as_global = require("neo-tree").config.window.insert_as
+    -- local insert_as_global = require("neo-tree").config.window.insert_as
     local use_parent
     if insert_as_local then
       use_parent = insert_as_local == "sibling"

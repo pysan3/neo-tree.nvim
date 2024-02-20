@@ -4,7 +4,7 @@ description: A migration guideline to neo-tree v4 for developers and a TODO list
 authors: takuto
 categories:
 created: 2024-02-19T16:25:02+0900
-updated: 2024-02-19T22:15:57+0900
+updated: 2024-02-20T11:54:57+0900
 version: 1.1.1
 @end
 
@@ -81,6 +81,21 @@ version: 1.1.1
    - ( ) send current buffer to `before_jump_info`.
    -- ( ) update jump info.
 
+** ( ) Cursor Position Save
+   Current code is very hacky.
+   - ( ) Revisit this and implement it a bit cleaner.
+
+   - (x) when curpos is saved
+   -- (x) close
+   --- (x) no need to do this anymore? bufdelete should handle this
+   -- (x) before render_tree
+   -- (x) follow_internal
+   --- (x) instead use focus_node
+   -- (x) bufdelete
+   --- (x) use BufWinLeave instead
+   - (x) when restored
+   -- (x) after render_tree
+
 ** (x) Keybinds
    - ( ) Make the code cleaner.
    - (x) assign mappings to bufnr in each source.
@@ -133,9 +148,6 @@ version: 1.1.1
 
    Solved!!!
    - {https://github.com/MunifTanjim/nui.nvim/pull/332}
-
-** ( ) Steal prevention
-   We need to know what should've been the the old file.
 
 ** ( ) Implement `wm.create_win`
 

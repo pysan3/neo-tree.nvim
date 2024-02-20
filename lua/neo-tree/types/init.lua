@@ -23,4 +23,5 @@
 ---@alias NeotreeSourceName string # Unique name for each registered source.
 ---@alias NeotreeSource table # TODO: Define what is required to be a neo-tree source
 
----@alias NeotreeCursorPos { [1]: integer|nil, [2]: integer|nil } # (1,0)-indexed cursor position in the window.
+---@class NeotreeCursorPos : vim.fn.winrestview.dict
+---@field is { restorable: boolean } # deprecated

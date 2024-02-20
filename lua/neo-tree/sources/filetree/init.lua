@@ -32,7 +32,7 @@ local Filetree = setmetatable({
 }, {
   __index = require("neo-tree.sources.base"), -- Inherit from base class.
   __call = function(cls, ...)
-    return cls.new(cls, ...)
+    return cls.new(...)
   end,
 })
 Filetree.__index = Filetree
@@ -46,6 +46,7 @@ function Filetree.new(config, id, dir)
     id = id,
     dir = dir and Path.new(dir) or Path.cwd(),
     config = config,
+    position = { is = { restorable = true } }, -- TODO: fuck it
   }, Filetree)
   if not self.dir:is_dir(true) then
     log.error("Filetree (%s) is not a directory. Abort.", self.dir:tostring())
@@ -189,14 +190,14 @@ function Filetree:navigate(dir, path_to_reveal, window_width, manager, failed_ar
   -- if not self.window.auto_expand_width then
   --   window_width.strict = true
   -- end
-  if not path_to_reveal then
-    -- if self.dir:basename() == "linux" then
-    --   path_to_reveal = self.dir
-    --     / "drivers/gpu/drm/nouveau/include/nvrm/535.113.01/common/sdk/nvidia/inc/ctrl/ctrl0073/ctrl0073specific.h"
-    -- else
-    --   path_to_reveal = self.dir / "lua/neo-tree/sources/document_symbols/lib/client_filters.lua"
-    -- end
-  end
+  -- if not path_to_reveal then
+  --   if self.dir:basename() == "linux" then
+  --     path_to_reveal = self.dir
+  --       / "drivers/gpu/drm/nouveau/include/nvrm/535.113.01/common/sdk/nvidia/inc/ctrl/ctrl0073/ctrl0073specific.h"
+  --   else
+  --     path_to_reveal = self.dir / "lua/neo-tree/sources/document_symbols/lib/client_filters.lua"
+  --   end
+  -- end
   if path_to_reveal then
     self:add_task(function()
       self:fill_tree(nil, 0, path_to_reveal)
@@ -255,7 +256,7 @@ function locals.new_node(path, level)
   -- TODO: Cache results.
   local stat = path:stat(false)
   local stat_type = stat and stat.type
-  local git_state = path.git_state or {}
+  local git_state = path.git_state
   local item = {
     pathlib = path,
     id = path:tostring(), -- string|nil

@@ -229,30 +229,36 @@ M.reset_search = function(state, refresh, open_current_node)
 end
 
 M.show_new_children = function(state, node_or_path)
-  local node = node_or_path
-  if node_or_path == nil then
-    node = state.tree:get_node()
-    node_or_path = node:get_id()
-  elseif type(node_or_path) == "string" then
-    node = state.tree:get_node(node_or_path)
-    if node == nil then
-      local parent_path, _ = utils.split_path(node_or_path)
-      node = state.tree:get_node(parent_path)
-      if node == nil then
-        M.navigate(state, nil, node_or_path)
-        return
-      end
-    end
+  if type(node_or_path) == "string" then
+    state:focus_node(node_or_path)
+  elseif node_or_path == nil then
   else
-    node = node_or_path
-    node_or_path = node:get_id()
+    state:focus_node(node_or_path:get_id())
   end
+  -- local node = node_or_path
+  -- if node_or_path == nil then
+  --   node = state.tree:get_node()
+  --   node_or_path = node:get_id()
+  -- elseif type(node_or_path) == "string" then
+  --   node = state.tree:get_node(node_or_path)
+  --   if node == nil then
+  --     local parent_path, _ = utils.split_path(node_or_path)
+  --     node = state.tree:get_node(parent_path)
+  --     if node == nil then
+  --       M.navigate(state, nil, node_or_path)
+  --       return
+  --     end
+  --   end
+  -- else
+  --   node = node_or_path
+  --   node_or_path = node:get_id()
+  -- end
 
-  if node.type ~= "directory" then
-    return
-  end
+  -- if node.type ~= "directory" then
+  --   return
+  -- end
 
-  M.navigate(state, nil, node_or_path)
+  -- M.navigate(state, nil, node_or_path)
 end
 
 M.focus_destination_children = function(state, move_from, destination)
@@ -391,8 +397,12 @@ M.setup = function(config, global_config)
   end
 end
 
+M.toggle_directory = function(state, node)
+  return state:toggle_directory(node, node.pathlib, false)
+end
+
 ---Expands or collapses the current node.
-M.toggle_directory = function(state, node, path_to_reveal, skip_redraw, recursive, callback)
+M.toggle_directory2 = function(state, node, path_to_reveal, skip_redraw, recursive, callback)
   local tree = state.tree
   if not node then
     node = tree:get_node()

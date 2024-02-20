@@ -338,7 +338,7 @@
 ---@class NeotreeConfig.event_handler.window : NeotreeConfig.event_handler.base
 ---@field event NeotreeConfig.event_handler.window.enum
 ---@field handler fun(args: NeotreeConfig.event_handler.window.args): any
----
+
 ---@class NeotreeConfig.event_handler.window.args
 ---@field position NeotreeWindowPosition
 ---@field source string

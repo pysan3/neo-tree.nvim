@@ -1,4 +1,5 @@
 local utils = require("neo-tree.utils")
+local renderer = require("neo-tree.ui.renderer")
 local e = require("neo-tree.types.enums")
 local mapping_helper = require("neo-tree.setup.mapping-helper")
 local events = require("neo-tree.events")
@@ -35,6 +36,8 @@ local Manager = setmetatable({
   -- Attributes defined here will be shared across all instances of Manager
   -- Think it as a class attribute, and put caches, const values here.
 
+  ---@type NeotreeConfig # Store user config.
+  config = {},
   ---@type table<integer, NeotreeManager> # One manager per tab. Configure via `config.share_state_among_tabs`.
   cache = {},
   ---@type table<integer, table<NeotreeStateId, NeotreeState>> # Table with values returned by `source.setup()`.
@@ -45,7 +48,6 @@ local Manager = setmetatable({
   global_position_state = {},
   ---@type nio.tasks.Task[]|{ index: integer, done: integer }
   global_tasks = { index = 0, done = 0 },
-  share_state_among_tabs = false,
   default_source = "",
   setup_is_done = false,
 }, {
@@ -82,6 +84,13 @@ function Manager.new(global_config, tabid)
       self:on_tab_enter()
     end,
   })
+  events.subscribe({
+    id = "__neo_tree_internal_win_closed" .. self.tabid,
+    event = events.VIM_WIN_CLOSED,
+    handler = function(args)
+      self:on_win_closed(args)
+    end,
+  })
   return self
 end
 
@@ -98,28 +107,6 @@ end
 ---Get the manager associated to current tabpage.
 function Manager.get_current()
   return Manager.get(vim.api.nvim_get_current_tabpage())
-end
-
----Redraw the tree without relaoding from the source.
----@param state NeotreeState
----@param curpos NeotreeCursorPos|nil # Set cursor position. (row, col)
-function Manager:redraw(state, curpos)
-  self.__timer_start = os.clock()
-  if state.bufnr and vim.api.nvim_buf_is_loaded(state.bufnr) then
-    vim.api.nvim_create_autocmd("CursorMoved", {
-      once = true,
-      desc = "Neo-tree: monitor cursor movement from user.",
-      buffer = state.bufnr,
-      callback = function()
-        if vim.api.nvim_get_current_buf() == state.bufnr then
-          state.cursor_update_by_user = true
-        end
-      end,
-    })
-    nio.run(function()
-      state:redraw(self, nil, curpos)
-    end)
-  end
 end
 
 ---Generate key to lookup in `self.window_lookup`.
@@ -147,6 +134,28 @@ end
 ---@param posid NeotreeWindowPosId
 function locals.pos_is_fixed(posid)
   return type(posid) == "string" and posid ~= "current"
+end
+
+---Redraw the tree without relaoding from the source.
+---@param state NeotreeState
+---@param curpos NeotreeCursorPos|nil # Set cursor position. (row, col)
+function Manager:redraw(state, curpos)
+  self.__timer_start = os.clock()
+  if state.bufnr and vim.api.nvim_buf_is_loaded(state.bufnr) then
+    vim.api.nvim_create_autocmd("CursorMoved", {
+      once = true,
+      desc = "Neo-tree: monitor cursor movement from user.",
+      buffer = state.bufnr,
+      callback = function()
+        if vim.api.nvim_get_current_buf() == state.bufnr then
+          state.cursor_update_by_user = true
+        end
+      end,
+    })
+    nio.run(function()
+      state:redraw(self, nil, curpos)
+    end)
+  end
 end
 
 ---Navigate to appropriate source with correct window
@@ -253,9 +262,21 @@ function Manager:done(state, requested_window_width, requested_curpos)
     elseif self.global_position_state[position] == state.id then -- State used to be a global state but not anymore.
       self.global_position_state[position] = nil
     end
-    if requested_curpos and not state.cursor_update_by_user then
-      vim.api.nvim_win_set_cursor(window.winid, requested_curpos)
-      nio.elapsed("set curpos done", self.__timer_start)
+    nio.elapsed("position before: " .. vim.inspect(state.position), self.__timer_start)
+    renderer.position.save(state)
+    nio.elapsed("position saved: " .. vim.inspect(state.position), self.__timer_start)
+    state.position = vim.tbl_extend("force", state.position, requested_curpos or {})
+    if state.cursor_update_by_user then
+      renderer.position.clear(state)
+      nio.elapsed("clear curpos done", self.__timer_start)
+    else
+      nio.elapsed("restore curpos start: " .. vim.inspect(state.position), self.__timer_start)
+      -- TODO: This is a very nasty workaround
+      -- refactor all renderer.postiion related code later
+      state.winid = window.winid ---@diagnostic disable-line
+      renderer.position.restore(state)
+      state.winid = nil ---@diagnostic disable-line
+      nio.elapsed("restore curpos done", self.__timer_start)
     end
     state.cursor_update_by_user = nil -- reset monitor
     for lhs, opts in pairs(state.config.window.mappings) do
@@ -416,7 +437,7 @@ function Manager:search_state(source_name, args, tabid)
   return state
 end
 
----Normalize tabid or 0 when `self.share_state_among_tabs`.
+---Normalize tabid or 0 when `self.config.share_state_among_tabs`.
 ---@param state_id NeotreeStateId
 ---@param tabid integer|nil
 function Manager:get_state(state_id, tabid)
@@ -427,7 +448,7 @@ function Manager:get_state(state_id, tabid)
   return self.states_lookup[_tabid][state_id]
 end
 
----Normalize tabid or 0 when `self.share_state_among_tabs` and set state to appropriate place.
+---Normalize tabid or 0 when `self.config.share_state_among_tabs` and set state to appropriate place.
 ---@param state NeotreeState
 ---@param tabid integer|nil
 function Manager:set_state(state, tabid)
@@ -439,11 +460,11 @@ function Manager:set_state(state, tabid)
   return state
 end
 
----Normalize tabid or 0 when `self.share_state_among_tabs`.
+---Normalize tabid or 0 when `self.config.share_state_among_tabs`.
 ---@param tabid integer|nil
 ---@return integer
 function Manager:get_tabid(tabid)
-  return self.share_state_among_tabs and 0
+  return self.config.share_state_among_tabs and 0
     or tabid
     or self.tabid
     or vim.api.nvim_get_current_tabpage()
@@ -481,6 +502,23 @@ function Manager:create_win(posid, position, state, requested_width, name, focus
   if focus then
     vim.api.nvim_set_current_win(window.winid)
   end
+  window:on("BufWinLeave", function(args)
+    vim.print(string.format([[BufDelete args: %s]], vim.inspect(args)))
+    vim.print(
+      string.format(
+        [[vim.api.nvim_get_current_buf(): %s]],
+        vim.inspect(vim.api.nvim_get_current_buf())
+      )
+    )
+    vim.print(
+      string.format(
+        [[vim.api.nvim_get_current_win(): %s]],
+        vim.inspect(vim.api.nvim_get_current_win())
+      )
+    )
+    renderer.position.save(state)
+    vim.print(string.format([[state.position: %s]], vim.inspect(state.position)))
+  end, { once = true })
   return window
 end
 
@@ -512,6 +550,49 @@ function Manager:search_win_by_winid(winid)
       return pos
     end
   end
+end
+
+---@param state_id NeotreeStateId
+function Manager:search_win_by_state_id(state_id)
+  if not state_id then
+    return nil
+  end
+  for pos, id in pairs(self.position_state) do
+    if id == state_id then
+      return pos
+    end
+  end
+end
+
+---Check if there exists a window for state.
+---@param state_id NeotreeStateId
+function Manager:window_exists(state_id)
+  local pos = self:search_win_by_state_id(state_id)
+  vim.print(string.format([[state_id: %s]], vim.inspect(state_id)))
+  vim.print(string.format([[pos: %s]], vim.inspect(pos)))
+  local window = pos and self.window_lookup[pos]
+  if window then
+    vim.print(string.format([[window.winid: %s]], vim.inspect(window.winid)))
+    vim.print(
+      string.format(
+        [[vim.api.nvim_win_is_valid(window.winid): %s]],
+        vim.inspect(vim.api.nvim_win_is_valid(window.winid))
+      )
+    )
+  end
+  if window and window.winid and vim.api.nvim_win_is_valid(window.winid) then
+    return window.winid
+  end
+end
+
+---Run callback on state's window if exists.
+---@generic T
+---@param state_id NeotreeStateId
+---@param cb fun(...: any): T
+---@return T|nil
+function Manager:nvim_win_call(state_id, cb)
+  local winid = self:window_exists(state_id)
+  return winid and vim.api.nvim_win_call(winid, cb)
 end
 
 function Manager:close_all()
@@ -546,27 +627,42 @@ end
 -- │                 Instance Initialization                 │
 -- ╰─────────────────────────────────────────────────────────╯
 
+function Manager.sync_user_config(user_config, default_config)
+  local sync_recursive = {
+    "git_status_async_options",
+    "open_files_do_not_replace_types",
+    "source_selector",
+  }
+  Manager.config = vim.tbl_extend("force", default_config, Manager.config, user_config)
+  for _, key in ipairs(sync_recursive) do
+    Manager.config[key] = vim.tbl_deep_extend(
+      "force",
+      default_config[key],
+      Manager.config[key] or {},
+      user_config[key] or {}
+    )
+  end
+end
+
 ---Create new manager instance or return cache if already created.
 ---@param user_config NeotreeConfig
 ---@return NeotreeSourceName[]
 function Manager.setup(user_config)
   Manager.wait_all_tasks()
   local default_config = require("neo-tree.defaults")
-  Manager.share_state_among_tabs = user_config.share_state_among_tabs
-  if user_config.share_state_among_tabs == nil then
-    Manager.share_state_among_tabs = false
-  end
-  local sources = user_config.sources or default_config.sources or {}
+  Manager.sync_user_config(user_config, default_config)
+  local sources = user_config.sources or Manager.config.sources or {}
   -- TODO: Remove me on real release.
   if sources[1] ~= "filetree" or #sources ~= 1 then
     log.warn("TESTING BRANCH. You've only got one source option: filetree.")
-    table.insert(sources, 1, "dummy")
+    local index = 1
     for _, source in ipairs(sources) do
       if string.find(source, ".", nil, true) then -- External sources, I accept you.
-        sources[#sources + 1] = source
+        index = index + 1
+        sources[index] = source
       end
     end
-    table.insert(sources, 1, "filetree")
+    sources[1] = "filetree"
   end
   Manager.set_sources(sources)
   Manager.default_source = locals.name_from_source(sources[1])
@@ -574,7 +670,7 @@ function Manager.setup(user_config)
     Manager.global_tasks.index = Manager.global_tasks.index + 1
     Manager.global_tasks[Manager.global_tasks.index] = nio.run(function()
       if info.setup_is_done then
-        return
+        return -- NOTE: only run once per source
       end
       local mod = require(info.module_path)
       ---@type NeotreeConfig.source_config
@@ -598,7 +694,7 @@ function Manager.setup(user_config)
         mod.window or {},
         user_source_config.window
       )
-      if user_config.use_default_mappings == false then
+      if Manager.config.use_default_mappings == false then
         default_config.window.mappings = {}
         default_source_config.window.mappings = {}
       end
@@ -609,24 +705,26 @@ function Manager.setup(user_config)
         user_source_config.window.mapping_options or {}
       )
       info.source_config.window.mappings = locals.fix_and_merge_mappings(
+        info.source_config.commands,
+        default_mapping_options,
         default_config.window.mappings or {},
         default_source_config.window.mappings or {},
-        user_source_config.window.mappings or {},
-        info.source_config.commands,
-        default_mapping_options
+        user_source_config.window.mappings or {}
       )
       info.source_config.components = locals.merge_components(
         default_config.default_component_configs or {},
-        -- source default component configs?
+        -- ISSUE: let sources define their default component configs?
+        -- mod.default_component_configs or {},
         user_config.default_component_configs or {},
         user_source_config.components or {}
       )
       info.source_config.renderers = locals.merge_renderers(
+        info.source_config.components,
         default_config.renderers or {},
-        -- source default renderers?
+        -- ISSUE: let sources define their default renderers?
+        -- mod.renderers or {},
         user_config.renderers or {},
-        user_source_config.renderers or {},
-        info.source_config.components
+        user_source_config.renderers or {}
       )
       -- copy remaining config values
       for key, value in pairs(default_config[source_name] or {}) do
@@ -640,6 +738,8 @@ function Manager.setup(user_config)
           end
         end
       end
+      user_config[source_name] = info.source_config
+      Manager.config[source_name] = "You shouldn't be accessing this value."
       mod.setup(info.source_config, vim.tbl_deep_extend("force", default_config, user_config))
       info.setup_is_done = true
     end)
@@ -681,9 +781,22 @@ function Manager:on_tab_enter()
   end
 end
 
+function Manager:on_win_closed(args)
+  local closed_winid = args.afile
+  local new_info = self:generate_jump_before_info()
+  for _, info in pairs(self.before_jump_info) do
+    if info.prev_winid == closed_winid then
+      info.prev_winid = new_info and new_info.prev_winid
+    end
+  end
+end
+
 function Manager:shutdown()
   events.unsubscribe({
     id = "__neo_tree_internal_tab_enter_" .. self.tabid,
+  })
+  events.unsubscribe({
+    id = "__neo_tree_internal_win_closed" .. self.tabid,
   })
   self.cache[self.tabid] = nil
 end
@@ -691,9 +804,9 @@ end
 ---Check if external module is a valid neo-tree source
 ---@param module_path string # path to require
 function locals.check_is_valid_source(module_path)
-  ---@type NeotreeState
-  local mod = require(module_path)
-  return mod.i_am_a_valid_source and mod:i_am_a_valid_source()
+  ---@type boolean, NeotreeState
+  local suc, mod = pcall(require, module_path)
+  return suc and mod and mod.i_am_a_valid_source and mod:i_am_a_valid_source()
 end
 
 ---Registered name will be the last portion of the source name
@@ -733,13 +846,13 @@ function Manager.set_sources(sources)
   return Manager.source_lookup
 end
 
----Merge render component definition. Priority is `user > source_default > default`.
+---Merge render component definition.
+---Values in later arguments are more prioritized, just like `vim.tbl_expand("force")`.
 ---@param default NeotreeConfig.components
----@param user NeotreeConfig.components
----@param user_source NeotreeConfig.components
+---@param ... NeotreeConfig.components
 ---@return NeotreeConfig.components
-function locals.merge_components(default, user, user_source)
-  local components = vim.tbl_deep_extend("force", default, user, user_source)
+function locals.merge_components(default, ...)
+  local components = vim.tbl_deep_extend("force", default, ...)
   for key, _ in pairs(components) do
     if not default[key] then
       components[key] = nil
@@ -749,11 +862,11 @@ function locals.merge_components(default, user, user_source)
 end
 
 ---Merge renderers from config and insert default keys for each component
----@param default NeotreeConfig.renderers
----@param source_default NeotreeConfig.renderers
----@param user NeotreeConfig.renderers
+---Values in later arguments are more prioritized, just like `vim.tbl_expand("force")`.
 ---@param components NeotreeConfig.components
-function locals.merge_renderers(default, source_default, user, components)
+---@param default NeotreeConfig.renderers
+---@param ... NeotreeConfig.renderers
+function locals.merge_renderers(components, default, ...)
   ---@param array NeotreeComponentBase[]
   local function merge_renderer_to_components(array)
     ---@type NeotreeComponentBase[]
@@ -775,22 +888,22 @@ function locals.merge_renderers(default, source_default, user, components)
     end
     return res
   end
-  local renderers = vim.tbl_extend("force", default, source_default, user)
-  for renderer, array in pairs(renderers) do
-    renderers[renderer] = merge_renderer_to_components(array)
+  local renderers = vim.tbl_extend("force", default, ...)
+  for r, array in pairs(renderers) do
+    renderers[r] = merge_renderer_to_components(array)
   end
   return renderers
 end
 
 ---Merge keybind settings.
----@param default NeotreeConfig.mappings
----@param source_default NeotreeConfig.mappings
----@param user NeotreeConfig.mappings
+---Values in later arguments are more prioritized, just like `vim.tbl_expand("force")`.
 ---@param commands NeotreeConfig.command_table
 ---@param default_map_opts NeotreeConfig.mapping_options
-function locals.fix_and_merge_mappings(default, source_default, user, commands, default_map_opts)
+---@param default NeotreeConfig.mappings
+---@param ... NeotreeConfig.mappings
+function locals.fix_and_merge_mappings(commands, default_map_opts, default, ...)
   ---@type NeotreeConfig.mappings
-  local mappings = vim.tbl_extend("force", default, source_default, user)
+  local mappings = vim.tbl_extend("force", default, ...)
   ---@type NeotreeConfig.resolved_mappings
   local resolved_mappings = {}
   for key, rhs in pairs(mappings) do

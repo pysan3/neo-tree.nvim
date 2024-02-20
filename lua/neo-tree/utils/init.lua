@@ -1,3 +1,5 @@
+local log = require("neo-tree.log")
+
 local vim = vim
 if ffi_available then
   ffi.cdef([[
@@ -402,6 +404,7 @@ end
 ---@param name string The name of the stat provider.
 ---@param func function The function to call to get the stats.
 M.register_stat_provider = function(name, func)
+  vim.print(debug.traceback("register_stat_provider"))
   stat_providers[name] = func
   log.debug("Registered stat provider", name)
 end
@@ -616,6 +619,7 @@ M.map = function(tbl, fn)
   return t
 end
 
+-- TODO: Move this function to manager.lua or utils
 M.get_appropriate_window = function(state)
   -- Avoid triggering autocommands when switching windows
   local eventignore = vim.o.eventignore
@@ -625,17 +629,12 @@ M.get_appropriate_window = function(state)
 
   -- use last window if possible
   local suitable_window_found = false
-  local nt = require("neo-tree")
-  local ignore_ft = nt.config.open_files_do_not_replace_types
-  local ignore = M.list_to_dict(ignore_ft)
-  ignore["neo-tree"] = true
-  if nt.config.open_files_in_last_window then
-    local prior_window = nt.get_prior_window(ignore)
-    if prior_window > 0 then
-      local success = pcall(vim.api.nvim_set_current_win, prior_window)
-      if success then
-        suitable_window_found = true
-      end
+  local mgr = require("neo-tree.manager").get_current()
+  if mgr then
+    local info = mgr.before_jump_info[state.current_position]
+    if info and info.prev_winid and vim.api.nvim_win_is_valid(info.prev_winid) then
+      suitable_window_found = true
+      vim.api.nvim_set_current_win(info.prev_winid)
     end
   end
   -- find a suitable window to open the file in
@@ -646,6 +645,7 @@ M.get_appropriate_window = function(state)
       vim.cmd("wincmd w")
     end
   end
+  local ignore = {}
   local attempts = 0
   while attempts < 5 and not suitable_window_found do
     local bt = vim.bo.buftype or "normal"
@@ -1067,7 +1067,9 @@ M.wrap = function(func, ...)
   local wrapped_args = { ... }
   return function(...)
     local all_args = table.pack(table.unpack(wrapped_args), ...)
-    func(table.unpack(all_args))
+    require("neo-tree.utils.nio_wrapper").run(function()
+      func(table.unpack(all_args))
+    end)
   end
 end
 

@@ -12,6 +12,7 @@ local NuiTree = require("nui.tree")
 local NuiLine = require("nui.line")
 local highlights = require("neo-tree.ui.highlights")
 local ui_rndr = require("neo-tree.ui.renderer")
+local renderer = require("neo-tree.ui.renderer")
 
 ---@alias NeotreeStateId string
 
@@ -54,7 +55,7 @@ local locals = {} -- Functions exported for test purposes
 ---@field bufnr integer|nil # Buffer this state is attached to.
 ---@field cursor_update_by_user boolean|nil # Set to true when user moves the cursor during navigation / redraw.
 ---@field current_position NeotreeWindowPosition # READONLY. Set by manager before `self:navigate`.
----@field position NeotreeWindowPosition|nil # Current position of the state.
+---@field position table # See `ui/renderer.lua > position`
 ---@field scope NeotreeStateScope|nil # Scope of this state.
 ---@field _workers table<string, nio.tasks.Task[]|{ index: integer, done: integer }>|nil
 ---@field tree NuiTree|nil # Cache NuiTree if possible.
@@ -73,7 +74,7 @@ local Source = setmetatable({
   renderers = {},
 }, {
   __call = function(cls, ...)
-    return cls.new(cls, ...)
+    return cls.new(...)
   end,
 })
 Source.__index = Source
@@ -87,19 +88,20 @@ function Source.new(config, id, dir)
     id = Source.name .. (id or ""),
     config = config,
     dir = dir and Path.new(dir) or Path.cwd(),
+    position = { is = { restorable = true } },
   }, Source)
   return self
-end
-
-function Source:free_mem()
-  -- Deconstructor
-  -- Eg clear cache etc.
 end
 
 ---Calculate the state id that should be used with the given `args`.
 ---@param args NeotreeManagerSearchArgs
 function Source.calculate_state_id(args)
   return args.dir or ""
+end
+
+function Source:free_mem()
+  -- Deconstructor
+  -- Eg clear cache etc.
 end
 
 ---Prepare for render. And write to buffer.
@@ -137,9 +139,15 @@ function Source:redraw(manager, request_window_width, curpos)
   self:add_task(
     function()
       nio.elapsed("inside add_task", manager.__timer_start)
+      if self.focused_node then
+        self:focus_node(self.focused_node)
+        nio.elapsed("is focused node", manager.__timer_start)
+      end
       self._tree_lock.acquire()
       nio.elapsed("inside modify_tree", manager.__timer_start)
       vim.schedule(function()
+        renderer.position.save(self)
+        nio.elapsed("position save: " .. vim.inspect(self.position), manager.__timer_start)
         self:render_tree(self.tree)
         nio.elapsed("after render_tree", manager.__timer_start)
         self._tree_lock.release()
@@ -165,27 +173,38 @@ function Source:redraw(manager, request_window_width, curpos)
     if self.focused_node and not curpos then
       local node, linenr = self.tree:get_node(self.focused_node)
       nio.elapsed("is curpos and get node", manager.__timer_start)
+      nio.elapsed("focused_node: " .. (self.focused_node or nil), manager.__timer_start)
       if node and linenr then
-        curpos = { linenr, string.len(node.indent or "") }
+        curpos = { lnum = linenr, col = string.len(node.indent or "") }
+        nio.elapsed(
+          string.format(
+            [[node: %s, linenr: %s, curpos: %s]],
+            node:get_id(),
+            linenr,
+            vim.inspect(curpos)
+          ),
+          manager.__timer_start
+        )
         self.focused_node = nil
+        nio.elapsed("curpos found", manager.__timer_start)
       end
     end
-    nio.elapsed("curpos found", manager.__timer_start)
     manager:done(self, request_window_width or self.render_args.longest_node, curpos)
   end)
 end
 
 function Source:focus_node(node_id)
-  local node, linenr = self.tree:get_node(node_id)
-  if not node then
-    log.error("node %s not found.", node_id)
-  end
-  if not linenr then
-    self:modify_tree(function(tree)
+  self:modify_tree(function(tree)
+    local node, linenr = self.tree:get_node(node_id)
+    if not node then
+      log.error("node %s not found.", node_id)
+      self.focused_node = node_id
+    end
+    if not linenr then
       locals.expand_to_node(tree, node)
       self.focused_node = node_id
-    end)
-  end
+    end
+  end)
 end
 
 function locals.expand_to_node(tree, node)

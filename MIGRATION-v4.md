@@ -71,6 +71,25 @@ This is my next big thing to tackle.
 - [ ] send current buffer to `before_jump_info`.
   - [ ] update jump info.
 
+## <label><input type="checkbox"> Cursor Position Save </label>
+
+Current code is very hacky.
+
+- [ ] Revisit this and implement it a bit cleaner.
+
+<!-- -->
+
+- [x] when curpos is saved
+  - [x] close
+    - [x] no need to do this anymore? bufdelete should handle this
+  - [x] before render\_tree
+  - [x] follow\_internal
+    - [x] instead use focus\_node
+  - [x] bufdelete
+    - [x] use BufWinLeave instead
+- [x] when restored
+  - [x] after render\_tree
+
 ## <label><input type="checkbox" checked> Keybinds </label>
 
 - [ ] Make the code cleaner.
@@ -125,10 +144,6 @@ Does not work when left -\> right -\> top -\> right. Do not have any way to test
 Solved!!!
 
 - <https://github.com/MunifTanjim/nui.nvim/pull/332>
-
-## <label><input type="checkbox"> Steal prevention </label>
-
-We need to know what should've been the the old file.
 
 ## <label><input type="checkbox"> Implement `wm.create_win` </label>
 
