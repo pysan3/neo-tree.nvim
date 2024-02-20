@@ -168,7 +168,7 @@ local focus_next_git_modified = function(state, reverse)
   if existing then
     renderer.focus_node(state, target)
   else
-    fs.navigate(state, state.path, target, nil, false)
+    fs.navigate(state, state.path, target, nil, false) ---@diagnostic disable-line
   end
 end
 

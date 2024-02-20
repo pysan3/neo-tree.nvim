@@ -55,15 +55,15 @@ require("noice.message.manager")._history = {}
 
 Here are the list of features that I haven't implemented / tested yet. I'll mostly work from top to bottom, but I may skip one or another based on my interests haha.
 
-## <label><input type="checkbox"> Neotree float </label>
+## ⬜ Neotree float
 
 I just haven't looked into the nui options.
 
-## <label><input type="checkbox"> Highlights </label>
+## ⬜ Highlights
 
 Least priority for me sadly. I'm pretty sure old code will just work as is.
 
-## <label><input type="checkbox"> Steal Prevention </label>
+## ⬜ Steal Prevention
 
 This is my next big thing to tackle.
 
@@ -71,13 +71,7 @@ This is my next big thing to tackle.
 - [ ] send current buffer to `before_jump_info`.
   - [ ] update jump info.
 
-## <label><input type="checkbox"> Cursor Position Save </label>
-
-Current code is very hacky.
-
-- [ ] Revisit this and implement it a bit cleaner.
-
-<!-- -->
+## ⬜ Cursor Position Save
 
 - [x] when curpos is saved
   - [x] close
@@ -90,11 +84,15 @@ Current code is very hacky.
 - [x] when restored
   - [x] after render\_tree
 
-## <label><input type="checkbox" checked> Keybinds </label>
+Current code is very hacky.
+
+- [ ] Revisit this and implement it a bit cleaner.
+- [ ] Backport <https://github.com/nvim-neo-tree/neo-tree.nvim/pull/1355>
+
+## ✅ Keybinds
 
 - [ ] Make the code cleaner.
-- [x] assign mappings to bufnr in each source.
-- [ ] rewrite `filetree/commands`. [./lua/neo-tree/ui/renderer.lua](./lua/neo-tree/ui/renderer.lua) \> `set_buffer_mappings`
+- [x] assign mappings to bufnr in each source. [./lua/neo-tree/ui/renderer.lua](./lua/neo-tree/ui/renderer.lua) \> `set_buffer_mappings`
 
 ``` lua
 keymap.set(state.bufnr, "n", cmd, resolved_mappings[cmd].handler, map_options)
@@ -112,30 +110,35 @@ if type(vfunc) == "function" then
 end
 ```
 
-## <label><input type="checkbox"> Cursor Position </label>
+### Keybind Commands
 
-- [ ] Backport <https://github.com/nvim-neo-tree/neo-tree.nvim/pull/1355>
+- [ ] rewrite `filetree/commands`.
+  - [ ] add
+  - [x] open
+  - [x] toggle
+  - [ ] delete
+  - [ ] clipboard
 
-## <label><input type="checkbox"> Event Handlers </label>
+## ⬜ Event Handlers
 
 None of them are correctly triggered, and the API might change in the future.
 
 - [ ] follow current file
 - [ ] change cwd
 
-## <label><input type="checkbox"> File Watcher </label>
+## ⬜ File Watcher
 
 - [x] Detect and update tree on file change.
 - [ ] file watcher is registered more than once.
 - [ ] Use debounce based on num of waiting files.
 - [ ] Scan check if dir is already scanned.
-  - [ ] [Keybinds](#keybinds) disable detecting file addition on neotree keybind.
+  - [ ] [Keybind Commands](#keybind-commands) disable detecting file addition on neotree keybind.
 
-## <label><input type="checkbox"> Git Watcher </label>
+## ⬜ Git Watcher
 
 Use `nio.process` to capture git status instead. Incremental update when done. Debounce.
 
-## <label><input type="checkbox" checked> Tab Sync </label>
+## ✅ Tab Sync
 
 On tab switch, recreate the other layouts.
 
@@ -145,9 +148,9 @@ Solved!!!
 
 - <https://github.com/MunifTanjim/nui.nvim/pull/332>
 
-## <label><input type="checkbox"> Implement `wm.create_win` </label>
+## ⬜ Implement `wm.create_win`
 
-## <label><input type="checkbox"> GC old state </label>
+## ⬜ GC old state
 
 Especially window-scoped states when reference is done. Call `state:free`.
 

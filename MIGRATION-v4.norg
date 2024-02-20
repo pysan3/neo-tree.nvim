@@ -67,21 +67,21 @@ version: 1.1.1
   Here are the list of features that I haven't implemented / tested yet.
   I'll mostly work from top to bottom, but I may skip one or another based on my interests haha.
 
-** ( ) Neotree float
+** ⬜ Neotree float
    I just haven't looked into the nui options.
 
-** ( ) Highlights
+** ⬜ Highlights
    Least priority for me sadly.
    I'm pretty sure old code will just work as is.
 
-** ( ) Steal Prevention
+** ⬜ Steal Prevention
    This is my next big thing to tackle.
 
    - ( ) autocmd for each manager.
    - ( ) send current buffer to `before_jump_info`.
    -- ( ) update jump info.
 
-** ( ) Cursor Position Save
+** ⬜ Cursor Position Save
    - (x) when curpos is saved
    -- (x) close
    --- (x) no need to do this anymore? bufdelete should handle this
@@ -97,10 +97,9 @@ version: 1.1.1
    - ( ) Revisit this and implement it a bit cleaner.
    - ( ) Backport {https://github.com/nvim-neo-tree/neo-tree.nvim/pull/1355}
 
-** (x) Keybinds
+** ✅ Keybinds
    - ( ) Make the code cleaner.
    - (x) assign mappings to bufnr in each source.
-   - (-) rewrite `filetree/commands`.
    {/ ./lua/neo-tree/ui/renderer.lua} > `set_buffer_mappings`
    @code lua
    keymap.set(state.bufnr, "n", cmd, resolved_mappings[cmd].handler, map_options)
@@ -118,28 +117,33 @@ version: 1.1.1
    end
    @end
 
-** ( ) Cursor Position
-   - ( ) Backport {https://github.com/nvim-neo-tree/neo-tree.nvim/pull/1355}
+*** Keybind Commands
+    - (-) rewrite `filetree/commands`.
+    -- (-) add
+    -- (x) open
+    -- (x) toggle
+    -- ( ) delete
+    -- ( ) clipboard
 
-** ( ) Event Handlers
+** ⬜ Event Handlers
    None of them are correctly triggered, and the API might change in the future.
 
    - ( ) follow current file
    - ( ) change cwd
 
-** ( ) File Watcher
+** ⬜ File Watcher
    - (x) Detect and update tree on file change.
    - (-) file watcher is registered more than once.
    - ( ) Use debounce based on num of waiting files.
    - ( ) Scan check if dir is already scanned.
-   -- (-) {# Keybinds} disable detecting file addition on neotree keybind.
+   -- (-) {#  Keybind Commands} disable detecting file addition on neotree keybind.
 
-** ( ) Git Watcher
+** ⬜ Git Watcher
    Use `nio.process` to capture git status instead.
    Incremental update when done.
    Debounce.
 
-** (x) Tab Sync
+** ✅ Tab Sync
    On tab switch, recreate the other layouts.
 
    Does not work when left -> right -> top -> right.
@@ -150,9 +154,9 @@ version: 1.1.1
    Solved!!!
    - {https://github.com/MunifTanjim/nui.nvim/pull/332}
 
-** ( ) Implement `wm.create_win`
+** ⬜ Implement `wm.create_win`
 
-** ( ) GC old state
+** ⬜ GC old state
    Especially window-scoped states when reference is done.
    Call `state:free`.
 
