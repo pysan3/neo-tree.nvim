@@ -647,7 +647,7 @@ end
 
 ---Functions to save and restore the focused node.
 M.position = {
-  save =  function(state)
+  save = function(state)
     if state.position.topline and state.position.lnum then
       log.debug("There's already a position saved to be restored. Cannot save another.")
       return
@@ -657,7 +657,9 @@ M.position = {
     if not mgr then
       return
     end
-    vim.print(string.format([[mgr:window_exists(state.id): %s]], vim.inspect(mgr:window_exists(state.id))))
+    vim.print(
+      string.format([[mgr:window_exists(state.id): %s]], vim.inspect(mgr:window_exists(state.id)))
+    )
     if state.tree and mgr:window_exists(state.id) then
       local win_state = mgr:nvim_win_call(state.id, vim.fn.winsaveview)
       vim.print(string.format([[win_state: %s]], vim.inspect(win_state)))
@@ -678,7 +680,7 @@ M.position = {
     state.position.node_id = node_id
     state.position.is.restorable = true
   end,
-  clear = function (state)
+  clear = function(state)
     state.position.topline = nil
     state.position.lnum = nil
     state.position.node_id = nil
