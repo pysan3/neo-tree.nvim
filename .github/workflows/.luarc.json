@@ -16,6 +16,7 @@
     "/home/runner/work/neo-tree.nvim/neo-tree.nvim/deps/nvim-web-devicons/lua",
     "/home/runner/work/neo-tree.nvim/neo-tree.nvim/deps/nvim-nio/lua",
     "/home/runner/work/neo-tree.nvim/neo-tree.nvim/deps/pathlib.nvim/lua",
+    "/home/runner/work/neo-tree.nvim/neo-tree.nvim/lua",
     "${3rd}/busted/library",
     "${3rd}/luassert/library"
   ],
