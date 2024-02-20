@@ -531,6 +531,6 @@ config.document_symbols = {
 ---@see https://github.com/nvim-neo-tree/neo-tree.nvim/wiki/Recipes#events for examples.
 config.event_handlers = {}
 
-config.filetree = config.filesystem
+config.filetree = config.filesystem ---@diagnostic disable-line
 
 return config
