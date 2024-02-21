@@ -195,3 +195,148 @@ WIP
 There are no specific changes regarding external sources. See [Sources](#sources) for the list you changes you need.
 
 However, you have the ability to specify your own commands for users to set for keybinds.
+
+# Nio Async vs Callbacks
+
+Lua heavily uses the callback method to make the execution somewhat *async*. However, this adds more complexity to the code and even worse, the base (parent) function cannot know when the callback has ended, nor get a return value from the function call.
+
+This is where [nvim-nio](https://github.com/nvim-neotest/nvim-nio) comes handly, but this is a neat wrapper around lua coroutines, so let's learn from the ground up.
+
+### Lua Async Await Article
+
+FYI, <https://github.com/ms-jpq/lua-async-await> is the best article and shows how to **implement** such library yourself with great details. I really recommend reading it if you are interested.
+
+## How to Coroutine
+
+### Callbacks and Goal
+
+I'll try to explain it with more examples and diagrams.
+
+Let's assume we want to ask for a file name and create that file.
+
+``` lua
+local function main_cb()
+  vim.ui.input({ prompt = "New file: "}, function (value)
+    vim.loop.fs_open(value, "w", 420, function (fd)
+      assert(fd, "Could not open " .. value)
+      vim.loop.fs_close(fd)
+    end)
+  end)
+end
+```
+
+Our goal is to write something like this.
+
+``` lua
+local function main_async()
+  local value = vim.ui.input({ prompt = "New file: "})
+  local fd = vim.loop.fs_open(value, "w", 420)
+  assert(fd, "Could not open " .. value)
+  vim.loop.fs_close(fd)
+end
+```
+
+### Lua Coroutines
+
+If you don't know anything about coroutine, read the [Lua Coroutine Doc](https://www.lua.org/pil/9.1.html), There are 2 important functions here: `coroutine.resume` and `coroutine.yield`.
+
+`coroutine.resume` will block the execution of one thread until `coroutine.yield` is called in another thread and when you pass arguments to `yield`, those will be passed over to `resume`.
+
+Using this trick, the main thread (`main_async`) can wait until `vim.ui.input` gets a user input and the child thread (where `vim.ui.input` runs) can `yield` back the input *on\_confirm*.
+
+``` txt
+| main thread                | sub thread                  |
+
+| main_async
+|       |
+| coroutine.resume --------- > vim.ui.input
+|       |                           |
+|       |                      on_confirm
+|       |                           |
+|       |                      coroutine.yield(user_input)
+|       | < ------------------------
+|       V
+| coroutine.resume !!
+| local value = <result-from-yield>
+```
+
+Basically, we will use `coroutine.resume(vim.ui.input, { prompt = ... }, <callback>)` and specify a *callback* that calls `coroutine.yield` at the end to return the result back to `resume`.
+
+Again <https://github.com/ms-jpq/lua-async-await> explains to more extent such as how to handle nested coroutines (i.e. sub thread also calls `resume` and wait for a sub-sub thread) and add error handling, proper traceback support on top of this mechanism.
+
+### Create an Async Function
+
+[nvim-nio](https://github.com/nvim-neotest/nvim-nio) provodes building blocks to implement this coroutine system with [`nio.wrap`](https://github.com/nvim-neotest/nvim-nio#third-party-integration).
+
+When the last argument is the callback, it is as simple as this...
+
+``` lua
+local nio = require("nio")
+
+local num_args = 2              -- how many arguments `vim.ui.input` expects, including the cb.
+local opt = { strict = true }   -- if strict, wrapped function raises exception when called in the _main thread_.
+local async_input = nio.wrap(vim.ui.input, num_args, opt)
+
+nio.run(function ()
+  local value = async_input({ prompt = "..." })
+end)
+```
+
+Let's also make one for `vim.loop.fs_open`.
+
+``` lua
+local nio = require("nio")
+
+local async_fs_open = nio.wrap(vim.loop.fs_open, 3, {})
+```
+
+Remember that the callback must be the last argument, so you'll need to create a temporary wrapper function if that's not the case. One example is `vim.defer_fn(cb, ms)` which is explained as an example in [nio's readme](https://github.com/nvim-neotest/nvim-nio#third-party-integration).
+
+### Summary
+
+Using these building blocks, the first example can be implemented like this.
+
+``` lua
+local nio = require("nio")
+
+local async_fs_close = nio.wrap(vim.loop.fs_close, 2, {})
+local function main_async()
+  local value = async_input({ prompt = "New file: "})
+  local fd = async_fs_open(value, "w", 420)
+  assert(fd, "Could not open " .. value)
+  async_fs_close(fd)
+end
+
+nio.run(main_async)
+```
+
+### Well, Actually...
+
+Well, actually these functions are already provided by nio with
+
+- `nio.ui`: <https://github.com/nvim-neotest/nvim-nio#nioui>
+- `nio.uv`: <https://github.com/nvim-neotest/nvim-nio#niouv>
+  - Even easier...
+  - `nio.file`: <https://github.com/nvim-neotest/nvim-nio#niofile>
+
+So the actual result will be
+
+``` lua
+local nio = require("nio")
+
+local function main_easy()
+  local value = nio.ui.input({ prompt = "New file: "})
+  local fd = nio.file.open(value, "w", 420)
+  assert(fd, "Could not open " .. value)
+  nio.uv.fs_close(fd)
+
+  -- and you can add more code like
+  vim.schedule(function()
+    vim.cmd.edit(value)
+  end)
+end
+
+nio.run(main_easy)
+```
+
+The biggest benefit is that although the code *looks* very much like regular code, it never blocks the execution of the main neovim lua runtime (except inside `vim.schedule` ofc), and user will never experience any stutter or freeze in the main UI.
