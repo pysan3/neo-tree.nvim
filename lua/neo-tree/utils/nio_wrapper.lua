@@ -15,10 +15,28 @@ function M.run(func, cb)
   if not M.check_nio_install() then
     return func()
   else
-    return M.nio.run(func, cb)
+    local here = debug.traceback("Run created here:")
+    return M.nio.run(func, cb or function(suc, err)
+      if not suc then
+        vim.print("CB FAILED: set at " .. here, "called with " .. err)
+      end
+    end)
   end
 end
 
+function M.wait(task)
+  if not M.check_nio_install() or task == nil then
+    return task
+  else
+    return task.wait()
+  end
+end
+
+---@generic T
+---@param func T
+---@param argc integer|nil
+---@param opts { strict: boolean }|nil
+---@return T
 function M.wrap(func, argc, opts)
   if not M.check_nio_install() then
     return func
@@ -27,11 +45,45 @@ function M.wrap(func, argc, opts)
   end
 end
 
+function M.scheduler()
+  if M.check_nio_install() then
+    return M.nio.scheduler()
+  end
+end
+
 function M.create(func, argc)
   if not M.check_nio_install() then
     return func
   else
     return M.nio.wrap(func, argc or 0)
+  end
+end
+
+function M.execute_command(cmd, input)
+  local process, err_msg = M.nio.process.run({
+    cmd = cmd[1],
+    args = { unpack(cmd, 2) },
+  })
+  if not process then
+    return false, { err_msg }
+  end
+  for i, value in ipairs(input or {}) do
+    local err = process.stdin.write(value .. "\n")
+    assert(
+      not err,
+      ([[ERROR cmd: '%s', input(%s): '%s', error: %s]]):format(
+        table.concat(cmd, " "),
+        i,
+        value,
+        err
+      )
+    )
+  end
+  process.stdin.close()
+  if process.result() == 0 then
+    return true, vim.split(process.stdout.read() or "", "\n", { plain = true, trimempty = false })
+  else
+    return false, {}
   end
 end
 
@@ -59,44 +111,27 @@ function M.wait_all(array, from, to)
   end
 end
 
----Cancel all tasks in `array` and run just the last task.
+---Cancel all tasks in `array`
 ---@param array nio.tasks.Task[]
 ---@param from integer|nil # Index of first task in `array`. Default: 1.
 ---@param to integer|nil # Index of last task in `array`. Default: #array.
-function M.wait_last_only(array, from, to)
+function M.cancel_all(array, from, to)
   if not M.check_nio_install() then
     return #array
   else
-    from = from or 1
-    -- if not to then
-    --   -- wait for a while until all tasks are registerd.
-    --   -- checks the length of array each n seconds, where n grows proportional to the number of piled up tasks.
-    --   -- when there's no more tasks added since last check, the very last task is waited.
-    --   local last_diff = #array - from
-    --   while true do
-    --     if last_diff > 1 then
-    --       M.sleep(last_diff * 1000)
-    --     end
-    --     local diff = #array - from
-    --     if diff > last_diff then
-    --       last_diff = diff
-    --     else
-    --       break
-    --     end
-    --   end
-    -- end
-    to = to or #array
-    local last_success_index = from
-    for i = from, to do
-      if i == to then
-        array[i]:wait()
-      else
-        array[i]:cancel()
-      end
-      last_success_index = i
-      array[i] = nil
+    local i = from or 1
+    if i < 1 then
+      print(debug.traceback("wait_all invalid start index"))
     end
-    return last_success_index
+    while array[i] do
+      array[i]:cancel()
+      array[i] = nil
+      i = i + 1
+      if to ~= nil and i > to then
+        break
+      end
+    end
+    return i - 1
   end
 end
 
