@@ -31,7 +31,6 @@ local locals = {} -- Functions exported for test purposes
 ---@field position_state table<NeotreeWindowPosId, NeotreeStateId|nil> # What state occupies each position.
 ---@field previous_windows NeotreeArray.integer # Remember the previous window and open files here.
 ---@field window_lookup table<NeotreeWindowPosId, NuiSplit|NuiPopup|NeotreeCurrentWin|nil> # NuiSplit or NuiPopup that is assigned to each window.
----@field __timer_start number|nil # Calculate how much time has elapsed.
 local Manager = setmetatable({
   -- Attributes defined here will be shared across all instances of Manager
   -- Think it as a class attribute, and put caches, const values here.
@@ -140,18 +139,8 @@ end
 ---@param state NeotreeState
 ---@param curpos NeotreeCursorPos|nil # Set cursor position. (row, col)
 function Manager:redraw(state, curpos)
-  self.__timer_start = os.clock()
+  log.timer_start("Manager:redraw")
   if state.bufnr and vim.api.nvim_buf_is_loaded(state.bufnr) then
-    vim.api.nvim_create_autocmd("CursorMoved", {
-      once = true,
-      desc = "Neo-tree: monitor cursor movement from user.",
-      buffer = state.bufnr,
-      callback = function()
-        if vim.api.nvim_get_current_buf() == state.bufnr then
-          state.cursor_update_by_user = true
-        end
-      end,
-    })
     nio.run(function()
       state:redraw(self, nil, curpos)
     end)
@@ -166,6 +155,7 @@ function Manager:navigate(args)
   elseif args.action == "closeall" then
     return self:close_all()
   end
+  log.timer_start("Manager:navigate")
   args.action = args.action or "focus"
   if not args.source or args.source == "last" then
     args.source = self.previous_source
@@ -189,6 +179,7 @@ function Manager:navigate(args)
   if args.action == "close" or (args.toggle and self.window_lookup[posid]) then
     return self:close_win(posid)
   end
+  log.time_it("command argparse done.")
   self:open_state(state, args.position, Path(args.dir), args.reveal_file and Path(args.reveal_file))
 end
 
@@ -206,7 +197,6 @@ end
 ---@param dir PathlibPath|nil # If nil, uses `state.dir`.
 ---@param reveal_file PathlibPath|nil # Passed to state:navigate.
 function Manager:open_state(state, position, dir, reveal_file)
-  self.__timer_start = os.clock() -- Start timeit.
   if not state.bufnr or not vim.api.nvim_buf_is_loaded(state.bufnr) then
     state.bufnr = vim.api.nvim_create_buf(false, false)
   end
@@ -218,6 +208,8 @@ function Manager:open_state(state, position, dir, reveal_file)
     strict = position ~= "left" and position ~= "right",
   }
   nio.run(function()
+    local _msg = "window created (id: %s, %s), start '%s':navigate to reveal '%s'."
+    log.time_it(string.format(_msg, window.winid, window_width, state.id, reveal_file))
     return state:navigate(dir or state.dir, reveal_file, window_width, self, {})
   end)
 end
@@ -227,50 +219,42 @@ end
 ---@param requested_window_width integer|nil
 ---@param requested_curpos NeotreeCursorPos|nil
 function Manager:done(state, requested_window_width, requested_curpos)
-  nio.elapsed("inside manager:done", self.__timer_start)
+  log.time_it("Manager:done called.")
   local position = state.current_position
   if position ~= "left" and position ~= "right" then
     requested_window_width = nil
   end
   vim.schedule(function()
-    nio.elapsed("inside schedule", self.__timer_start)
     for pos, state_id in pairs(self.position_state) do
       if state_id == state.id and pos ~= position then
         self:close_win(pos)
       end
     end
-    nio.elapsed("after close all other wins", self.__timer_start)
+    log.time_it("Close all other wins.")
     self.previous_source = state.name
     self.previous_position[state.name] = position
     local posid = locals.get_posid(position)
-    nio.elapsed("get posid", self.__timer_start)
     local window = self:create_win(posid, position, state, requested_window_width, "TODO", false)
-    nio.elapsed("after create_win", self.__timer_start)
     local new_posid = locals.get_posid(position, window.winid)
-    nio.elapsed("get new posid", self.__timer_start)
     self.position_state[new_posid] = state.id
     if state.scope == e.state_scopes.GLOBAL and locals.pos_is_fixed(new_posid) then -- Also register state to global position table.
       self.global_position_state[position] = state.id
     elseif self.global_position_state[position] == state.id then -- State used to be a global state but not anymore.
       self.global_position_state[position] = nil
     end
-    nio.elapsed("position before: " .. vim.inspect(state.position), self.__timer_start)
     renderer.position.save(state)
-    nio.elapsed("position saved: " .. vim.inspect(state.position), self.__timer_start)
     state.position = vim.tbl_extend("force", state.position, requested_curpos or {})
+    log.fmt_trace("updated_by_user: %s, position: %s", state.cursor_update_by_user, state.position)
     if state.cursor_update_by_user then
       renderer.position.clear(state)
-      nio.elapsed("clear curpos done", self.__timer_start)
     else
-      nio.elapsed("restore curpos start: " .. vim.inspect(state.position), self.__timer_start)
       -- TODO: This is a very nasty workaround
       -- refactor all renderer.postiion related code later
       state.winid = window.winid ---@diagnostic disable-line
       renderer.position.restore(state)
+      renderer.position.clear(state)
       state.winid = nil ---@diagnostic disable-line
-      nio.elapsed("restore curpos done", self.__timer_start)
     end
-    state.cursor_update_by_user = nil -- reset monitor
     for lhs, opts in pairs(state.config.window.mappings) do
       local func = opts.func
       local vfunc = opts.vfunc
@@ -308,16 +292,7 @@ function Manager:done(state, requested_window_width, requested_curpos)
         )
       end
     end
-    nio.elapsed("set keymap done", self.__timer_start)
-    log.info(
-      string.format(
-        "%s %s %.3f sec, nio: %s",
-        state.name,
-        position,
-        os.clock() - self.__timer_start,
-        nio.check_nio_install() and "on" or "off"
-      )
-    )
+    log.time_it("Rendering sequence done!")
   end)
 end
 
@@ -482,21 +457,7 @@ function Manager:create_win(posid, position, state, requested_width, name, focus
     vim.api.nvim_set_current_win(window.winid)
   end
   window:on("BufWinLeave", function(args)
-    vim.print(string.format([[BufDelete args: %s]], vim.inspect(args)))
-    vim.print(
-      string.format(
-        [[vim.api.nvim_get_current_buf(): %s]],
-        vim.inspect(vim.api.nvim_get_current_buf())
-      )
-    )
-    vim.print(
-      string.format(
-        [[vim.api.nvim_get_current_win(): %s]],
-        vim.inspect(vim.api.nvim_get_current_win())
-      )
-    )
     renderer.position.save(state)
-    vim.print(string.format([[state.position: %s]], vim.inspect(state.position)))
   end, { once = true })
   return window
 end
@@ -551,18 +512,7 @@ end
 ---@param state_id NeotreeStateId
 function Manager:window_exists(state_id)
   local pos = self:search_win_by_state_id(state_id)
-  vim.print(string.format([[state_id: %s]], vim.inspect(state_id)))
-  vim.print(string.format([[pos: %s]], vim.inspect(pos)))
   local window = pos and self.window_lookup[pos]
-  if window then
-    vim.print(string.format([[window.winid: %s]], vim.inspect(window.winid)))
-    vim.print(
-      string.format(
-        [[vim.api.nvim_win_is_valid(window.winid): %s]],
-        vim.inspect(vim.api.nvim_win_is_valid(window.winid))
-      )
-    )
-  end
   if window and window.winid and vim.api.nvim_win_is_valid(window.winid) then
     return window.winid
   end
@@ -631,6 +581,7 @@ end
 ---@param user_config NeotreeConfig
 ---@return NeotreeSourceName[]
 function Manager.setup(user_config)
+  log.timer_start("Manager.setup")
   Manager.wait_all_tasks()
   local default_config = require("neo-tree.defaults")
   Manager.sync_user_config(user_config, default_config)
@@ -648,6 +599,7 @@ function Manager.setup(user_config)
     sources[1] = "filetree"
   end
   Manager.set_sources(sources)
+  log.time_it("sources found: " .. vim.inspect(vim.tbl_keys(Manager.source_lookup)))
   Manager.default_source = locals.name_from_source(sources[1])
   for source_name, info in pairs(Manager.source_lookup) do
     Manager.global_tasks.index = Manager.global_tasks.index + 1
@@ -725,6 +677,7 @@ function Manager.setup(user_config)
       Manager.config[source_name] = "You shouldn't be accessing this value."
       mod.setup(info.source_config, vim.tbl_deep_extend("force", default_config, user_config))
       info.setup_is_done = true
+      log.time_it("loading source " .. source_name .. " is finished.")
     end)
   end
   if not Manager.setup_is_done then
