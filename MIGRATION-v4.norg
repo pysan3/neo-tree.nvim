@@ -4,7 +4,7 @@ description: A migration guideline to neo-tree v4 for developers and a TODO list
 authors: takuto
 categories:
 created: 2024-02-19T16:25:02+0900
-updated: 2024-02-20T11:54:57+0900
+updated: 2024-02-24T00:04:57+0900
 version: 1.1.1
 @end
 
@@ -78,10 +78,11 @@ version: 1.1.1
    This is my next big thing to tackle.
 
    - ( ) autocmd for each manager.
-   - ( ) send current buffer to `before_jump_info`.
-   -- ( ) update jump info.
+   - ( ) send current buffer to previous *non* neo-tree window.
+   -- (_) update jump info.
+   -- (x) remember previous window on WinLeave
 
-** ⬜ Cursor Position Save
+** ✅ Cursor Position Save
    - (x) when curpos is saved
    -- (x) close
    --- (x) no need to do this anymore? bufdelete should handle this
@@ -98,7 +99,7 @@ version: 1.1.1
    - ( ) Backport {https://github.com/nvim-neo-tree/neo-tree.nvim/pull/1355}
 
 ** ✅ Keybinds
-   - ( ) Make the code cleaner.
+   - (x) Make the code cleaner.
    - (x) assign mappings to bufnr in each source.
    {/ ./lua/neo-tree/ui/renderer.lua} > `set_buffer_mappings`
    @code lua
@@ -119,10 +120,13 @@ version: 1.1.1
 
 *** Keybind Commands
     - (-) rewrite `filetree/commands`.
-    -- (-) add
+    -- (x) add
+    --- (x) focus added file
     -- (x) open
     -- (x) toggle
-    -- ( ) delete
+    -- (x) delete
+    --- (x) update tree
+    -- ( ) close_node
     -- ( ) clipboard
 
 ** ⬜ Event Handlers
@@ -133,7 +137,7 @@ version: 1.1.1
 
 ** ⬜ File Watcher
    - (x) Detect and update tree on file change.
-   - (-) file watcher is registered more than once.
+   - (x) file watcher is registered more than once.
    - ( ) Use debounce based on num of waiting files.
    - ( ) Scan check if dir is already scanned.
    -- (-) {#  Keybind Commands} disable detecting file addition on neotree keybind.
