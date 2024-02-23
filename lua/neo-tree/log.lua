@@ -232,8 +232,9 @@ log.new = function(config, standalone)
     end
     local elapsed = os.clock() - obj.__timer_start
     local async = require("neo-tree.utils.nio_wrapper").current_task() and " on" or "off"
-    obj.trace(string.format("%s async(%s) %.3f sec: ", obj.__timer_label, async, elapsed), ...)
-    print(string.format("%s async(%s) %.3f sec: ", obj.__timer_label, async, elapsed), ...)
+    obj.trace(string.format("%s async(%s) %.3f sec:", obj.__timer_label, async, elapsed), ...)
+    -- TODO: remove this print and move to log.trace <pysan3>
+    print(string.format("%s async(%s) %.3f sec:", obj.__timer_label, async, elapsed), ...)
   end
 
   return obj
