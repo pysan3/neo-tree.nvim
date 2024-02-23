@@ -403,7 +403,7 @@ function Filetree:remove_node_recursive(node_id)
   end
   node.pathlib:unregister_watcher()
   node.pathlib = nil
-  return self.tree:remove_node(node_id)
+  return self.tree:remove_node(node_id) and true or false
 end
 
 ---Update `self.tree` on a file rename.

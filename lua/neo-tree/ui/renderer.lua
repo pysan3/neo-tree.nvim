@@ -657,12 +657,8 @@ M.position = {
     if not mgr then
       return
     end
-    vim.print(
-      string.format([[mgr:window_exists(state.id): %s]], vim.inspect(mgr:window_exists(state.id)))
-    )
     if state.tree and mgr:window_exists(state.id) then
       local win_state = mgr:nvim_win_call(state.id, vim.fn.winsaveview)
-      vim.print(string.format([[win_state: %s]], vim.inspect(win_state)))
       state.position.topline = win_state.topline
       state.position.lnum = win_state.lnum
       log.debug("Saved cursor position with lnum: " .. state.position.lnum)
