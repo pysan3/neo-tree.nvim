@@ -85,7 +85,7 @@ function M.define_events()
   defauc(events.VIM_TAB_CLOSED, { "TabClosed" })
   defauc(events.VIM_TERMINAL_ENTER, { "TermEnter" }, 0)
   defauc(events.VIM_TEXT_CHANGED_NORMAL, { "TextChanged" }, 200)
-  defauc(events.VIM_WIN_CLOSED, { "WinClosed" })
+  defauc(events.VIM_WIN_LEAVE, { "WinLeave" })
   defauc(events.VIM_WIN_ENTER, { "WinEnter" }, 0, nil, true)
 
   defauc(events.GIT_EVENT, { "User FugitiveChanged" }, 100)

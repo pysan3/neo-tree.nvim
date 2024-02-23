@@ -631,10 +631,14 @@ M.get_appropriate_window = function(state)
   local suitable_window_found = false
   local mgr = require("neo-tree.manager").get_current()
   if mgr then
-    local info = mgr.before_jump_info[state.current_position]
-    if info and info.prev_winid and vim.api.nvim_win_is_valid(info.prev_winid) then
-      suitable_window_found = true
-      vim.api.nvim_set_current_win(info.prev_winid)
+    while mgr.previous_windows:len() > 0 do
+      local prev = mgr.previous_windows:popright()
+      if prev and vim.api.nvim_win_is_valid(prev) then
+        mgr.previous_windows:append(prev) -- put it back
+        suitable_window_found = true
+        vim.api.nvim_set_current_win(prev)
+        break
+      end
     end
   end
   -- find a suitable window to open the file in

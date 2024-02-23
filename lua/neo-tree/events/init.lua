@@ -47,7 +47,7 @@ local enum = {
   VIM_TAB_CLOSED = "vim_tab_closed",
   VIM_TERMINAL_ENTER = "vim_terminal_enter",
   VIM_TEXT_CHANGED_NORMAL = "vim_text_changed_normal",
-  VIM_WIN_CLOSED = "vim_win_closed",
+  VIM_WIN_LEAVE = "vim_win_leave",
   VIM_WIN_ENTER = "vim_win_enter",
 }
 

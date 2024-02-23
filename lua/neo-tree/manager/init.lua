@@ -29,8 +29,8 @@ local locals = {} -- Functions exported for test purposes
 ---@field previous_source NeotreeSourceName # Previous source name rendered with this manager.
 ---@field previous_position table<NeotreeSourceName, NeotreeFixedPosition|nil> # Last position the state was rendered.
 ---@field position_state table<NeotreeWindowPosId, NeotreeStateId|nil> # What state occupies each position.
+---@field previous_windows NeotreeArray.integer # Remember the previous window and open files here.
 ---@field window_lookup table<NeotreeWindowPosId, NuiSplit|NuiPopup|NeotreeCurrentWin|nil> # NuiSplit or NuiPopup that is assigned to each window.
----@field before_jump_info table<NeotreeWindowPosId, NeotreeWindowBeforeJump|nil>
 ---@field __timer_start number|nil # Calculate how much time has elapsed.
 local Manager = setmetatable({
   -- Attributes defined here will be shared across all instances of Manager
@@ -74,7 +74,7 @@ function Manager.new(global_config, tabid)
     previous_position = {},
     position_state = {},
     window_lookup = {},
-    before_jump_info = {},
+    previous_windows = require("neo-tree.utils.array").integer(),
   }, Manager)
   Manager.cache[tabid] = self
   events.subscribe({
@@ -85,10 +85,10 @@ function Manager.new(global_config, tabid)
     end,
   })
   events.subscribe({
-    id = "__neo_tree_internal_win_closed" .. self.tabid,
-    event = events.VIM_WIN_CLOSED,
-    handler = function(args)
-      self:on_win_closed(args)
+    id = "__neo_tree_internal_win_leave_" .. self.tabid,
+    event = events.VIM_WIN_LEAVE,
+    handler = function()
+      self:on_win_leave()
     end,
   })
   return self
@@ -207,17 +207,12 @@ end
 ---@param reveal_file PathlibPath|nil # Passed to state:navigate.
 function Manager:open_state(state, position, dir, reveal_file)
   self.__timer_start = os.clock() -- Start timeit.
-  local jump_before = self:generate_jump_before_info()
   if not state.bufnr or not vim.api.nvim_buf_is_loaded(state.bufnr) then
     state.bufnr = vim.api.nvim_create_buf(false, false)
   end
-  if jump_before and jump_before.prev_winid then
-    vim.api.nvim_set_current_win(jump_before.prev_winid)
-  end
-  local window = self:create_win(position, position, state, nil, "TODO", true)
+  local window = self:create_win(position, position, state, nil, "TODO", false)
   local new_posid = locals.get_posid(position, window.winid)
   self.window_lookup[new_posid] = window
-  self.before_jump_info[new_posid] = jump_before
   local window_width = {
     width = vim.api.nvim_win_get_width(window.winid),
     strict = position ~= "left" and position ~= "right",
@@ -249,13 +244,10 @@ function Manager:done(state, requested_window_width, requested_curpos)
     self.previous_position[state.name] = position
     local posid = locals.get_posid(position)
     nio.elapsed("get posid", self.__timer_start)
-    local jump_before = self:generate_jump_before_info()
-    nio.elapsed("after generate_jump_before_info", self.__timer_start)
     local window = self:create_win(posid, position, state, requested_window_width, "TODO", false)
     nio.elapsed("after create_win", self.__timer_start)
     local new_posid = locals.get_posid(position, window.winid)
     nio.elapsed("get new posid", self.__timer_start)
-    self.before_jump_info[new_posid] = jump_before
     self.position_state[new_posid] = state.id
     if state.scope == e.state_scopes.GLOBAL and locals.pos_is_fixed(new_posid) then -- Also register state to global position table.
       self.global_position_state[position] = state.id
@@ -367,19 +359,6 @@ function locals.normalize_keymap_opts(opts)
     res[key] = opts[key]
   end
   return res
-end
-
-function Manager:generate_jump_before_info()
-  local cur_winid = vim.api.nvim_get_current_win()
-  local nt_window = self:search_win_by_winid(cur_winid)
-  if nt_window then
-    return self.before_jump_info[nt_window]
-  else
-    return {
-      prev_winid = cur_winid,
-      prev_bufnr = vim.api.nvim_get_current_buf(),
-    }
-  end
 end
 
 ---Function called if state fails to render with given args.
@@ -533,9 +512,13 @@ function Manager:close_win(posid)
       self.global_position_state[posid] = nil
     end
     window:hide() ---@diagnostic disable-line -- lua_ls cannot correctly detect interfaces.
-    local prev_winid = self.before_jump_info[posid].prev_winid
-    if prev_winid and vim.api.nvim_win_is_valid(prev_winid) then
-      vim.api.nvim_set_current_win(prev_winid)
+    while self.previous_windows:len() > 0 do
+      local prev = self.previous_windows:popright()
+      if prev and vim.api.nvim_win_is_valid(prev) then
+        self.previous_windows:append(prev) -- put it back
+        vim.api.nvim_set_current_win(prev)
+        break
+      end
     end
   end
 end
@@ -781,23 +764,26 @@ function Manager:on_tab_enter()
   end
 end
 
-function Manager:on_win_closed(args)
-  local closed_winid = args.afile
-  local new_info = self:generate_jump_before_info()
-  for _, info in pairs(self.before_jump_info) do
-    if info.prev_winid == closed_winid then
-      info.prev_winid = new_info and new_info.prev_winid
+function Manager:on_win_leave()
+  if vim.api.nvim_get_current_tabpage() == self.tabid then
+    local winid = vim.api.nvim_get_current_win()
+    local is_neotree = self:search_win_by_winid(winid)
+    if not is_neotree then
+      self.previous_windows:append(winid)
     end
   end
 end
 
 function Manager:shutdown()
-  events.unsubscribe({
-    id = "__neo_tree_internal_tab_enter_" .. self.tabid,
-  })
-  events.unsubscribe({
-    id = "__neo_tree_internal_win_closed" .. self.tabid,
-  })
+  local id_prefix = {
+    "__neo_tree_internal_tab_enter_",
+    "__neo_tree_internal_win_leave_",
+  }
+  for _, prefix in ipairs(id_prefix) do
+    events.unsubscribe({
+      id = prefix .. self.tabid,
+    })
+  end
   self.cache[self.tabid] = nil
 end
 
