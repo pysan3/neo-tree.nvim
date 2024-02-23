@@ -72,7 +72,7 @@ M.create_node = nio.wrap(
     end)
   end,
   4,
-  {}
+  { strict = false }
 )
 
 ---Create a new directory inside `target_dir`.
@@ -84,7 +84,7 @@ M.create_directory = nio.wrap(
     return M.create_node(target_dir, cwd, true, callback)
   end,
   3,
-  {}
+  { strict = false }
 )
 
 local function find_replacement_buffer(for_buf)

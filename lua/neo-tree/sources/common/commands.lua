@@ -80,7 +80,8 @@ local M = setmetatable({}, {
   __index = function(tbl, key)
     if key == "call" then
       tbl.call = function(cb, ...)
-        return cb(...)
+        cb(...)
+        return ...
       end
       return tbl.call
     end
@@ -114,11 +115,10 @@ M.wrap9 = {}
 ---@param callback function|nil # The callback to call when the command is done. Called with the parent node as the argument.
 ---@return PathlibPath[] create
 ---@return NuiTreeNode parent
-M.wrap2.add = function(state, callback)
+M.nowrap.add = function(state, callback)
   local node = get_folder_node(state)
   assert(node, "Failed to find current focused node.")
-  local add_result = fs.create_node(node.pathlib, state.dir, false)
-  return M.call(callback, add_result or {}, node)
+  return fs.create_node(node.pathlib, state.dir, false, callback) or {}, node
 end
 
 ---Add a new file or dir at the current node
@@ -126,11 +126,10 @@ end
 ---@param callback function|nil # The callback to call when the command is done. Called with the parent node as the argument.
 ---@return PathlibPath[] create
 ---@return NuiTreeNode parent
-M.wrap2.add_directory = function(state, callback)
+M.nowrap.add_directory = function(state, callback)
   local node = get_folder_node(state)
   assert(node, "Failed to find current focused node.")
-  local add_result = fs.create_directory(node.pathlib, state.dir)
-  return M.call(callback, add_result or {}, node)
+  return fs.create_directory(node.pathlib, state.dir, callback) or {}, node
 end
 
 ---Expand all nodes
@@ -668,11 +667,10 @@ end
 ---@param state NeotreeState
 ---@param callback function|nil # The callback to call when the command is done. Called with the parent node as the argument.
 ---@return PathlibPath[]
-M.wrap2.delete = function(state, callback)
+M.nowrap.delete = function(state, callback)
   local node = state.tree:get_node()
   if node and (node.type == "file" or node.type == "directory") then
-    local removed = fs.delete_node(node.pathlib, false)
-    return M.call(callback, removed)
+    return fs.delete_node(node.pathlib, false, callback)
   else
     log.warn("The `delete` command can only be used on files and directories.")
     return M.call(callback, {})
@@ -725,11 +723,14 @@ end
 ---@param state NeotreeState
 ---@param toggle_directory fun(node: NuiTree.Node)
 M.nowrap.toggle_node = function(state, toggle_directory)
+  log.time_it("common toggle_node")
   local node = state.tree:get_node()
   if not node or not utils.is_expandable(node) then
+    log.time_it("not expandable")
     return
   end
   if node.type == "directory" and toggle_directory then
+    log.time_it("do toggle_directory")
     toggle_directory(node)
   elseif node:has_children() then
     local updated = false
@@ -982,11 +983,11 @@ function M:_copy_from_parent()
       if name_in_regex_list(key) then
         self[key] = meta_t[key]
       else
-        -- self[key] = function()
-        --   local e = "Command '%s' is not available. Please revisit the document or submit an issue."
-        --   log.error(string.format(e, key))
-        -- end
-        self[key] = nil
+        -- self[key] = nil
+        self[key] = function()
+          local e = "Command '%s' is not available. Please revisit the document or submit an issue."
+          log.error(string.format(e, key))
+        end
       end
     end
   end

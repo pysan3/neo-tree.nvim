@@ -18,7 +18,7 @@ function M.run(func, cb)
     local here = debug.traceback("Run created here:")
     return M.nio.run(func, cb or function(suc, err)
       if not suc then
-        vim.print("CB FAILED: set at " .. here, "called with " .. err)
+        vim.print("Nio task FAILED: set at " .. here, "called with " .. err)
       end
     end)
   end

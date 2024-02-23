@@ -209,7 +209,7 @@ log.new = function(config, standalone)
     obj[x.name] = function(...)
       return log_at_level(i, x, make_string, ...)
     end
-    obj["fmt_" .. x.name] = function()
+    obj["fmt_" .. x.name] = function(...)
       return log_at_level(i, x, function(...)
         local passed = { ... }
         local fmt = table.remove(passed, 1)
@@ -218,7 +218,7 @@ log.new = function(config, standalone)
           table.insert(inspected, vim.inspect(v))
         end
         return string.format(fmt, unpack(inspected))
-      end)
+      end, ...)
     end
   end
 
@@ -231,8 +231,9 @@ log.new = function(config, standalone)
       obj.timer_start("")
     end
     local elapsed = os.clock() - obj.__timer_start
-    local async = require("neo-tree.utils.nio_wrapper").current_task() and "on" or "off"
-    obj.trace(string.format("%s async(%s) %.3f sec: %s", obj.__timer_label, async, elapsed), ...)
+    local async = require("neo-tree.utils.nio_wrapper").current_task() and " on" or "off"
+    obj.trace(string.format("%s async(%s) %.3f sec: ", obj.__timer_label, async, elapsed), ...)
+    print(string.format("%s async(%s) %.3f sec: ", obj.__timer_label, async, elapsed), ...)
   end
 
   return obj

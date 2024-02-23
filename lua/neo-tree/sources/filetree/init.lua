@@ -214,21 +214,22 @@ end
 ---@param reveal_path PathlibPath|nil # Ignores depth limit and digs until this path.
 function Filetree:fill_tree(parent_id, depth, reveal_path)
   self:modify_tree(function(tree)
-    local cwd_len = self.dir:len()
     local root = tree:get_node(parent_id or self.dir:tostring())
     if not root then
       return
     end
+    local root_depth = root:get_depth()
+    local cwd_len = self.dir:len() + root_depth
     local reveal_node = reveal_path and tree:get_node(reveal_path:tostring())
     if reveal_node and depth and reveal_path and reveal_path:len() - cwd_len >= depth then
       return -- reveal target already exists.
     end
     local opts = { depth = depth, fallback = function() end }
     if depth and reveal_path then
-      opts = locals.skipf_reveal_parent(self.dir, opts.depth, reveal_path, opts.fallback)
+      opts = locals.skipf_reveal_parent(cwd_len, opts.depth, reveal_path, opts.fallback)
     end
     if self.config.scan_mode == "deep" then
-      opts = locals.skipf_scan_deep(self.dir, opts.depth, self.config.filtered_items, opts.fallback)
+      opts = locals.skipf_scan_deep(cwd_len, opts.depth, self.config.filtered_items, opts.fallback)
     end
     ---@type table<string, NuiTree.Node[]> # { parent_id: [nodes to be added] }
     local nodes = vim.defaulttable()
@@ -237,8 +238,8 @@ function Filetree:fill_tree(parent_id, depth, reveal_path)
       self:add_task(function()
         local node = tree:get_node(path:tostring())
         if not node then
-          node = locals.new_node(path, path:len() - cwd_len)
-          local _parent = node.pathlib:parent_assert():tostring()
+          local _parent = path:parent_assert():tostring()
+          node = locals.new_node(path, path:len() - cwd_len + root_depth)
           table.insert(nodes[_parent], node)
         end
         node.is_reveal_target = reveal_path and path == reveal_path or false
@@ -263,8 +264,7 @@ function Filetree:fill_tree(parent_id, depth, reveal_path)
   end)
 end
 
-function locals.skipf_reveal_parent(cwd, depth, reveal_path, fallback)
-  local cwd_len = cwd:len()
+function locals.skipf_reveal_parent(cwd_len, depth, reveal_path, fallback)
   local reveal_string = reveal_path:absolute():tostring()
   local new_depth = math.max(depth, reveal_path:len() - cwd_len)
   return {
@@ -278,8 +278,7 @@ function locals.skipf_reveal_parent(cwd, depth, reveal_path, fallback)
   }
 end
 
-function locals.skipf_scan_deep(cwd, depth, filtered_items_config, fallback)
-  local cwd_len = cwd:len()
+function locals.skipf_scan_deep(cwd_len, depth, filtered_items_config, fallback)
   return {
     depth = nil,
     skip_dir = function(dir)
@@ -312,21 +311,19 @@ end
 ---@param path_to_reveal PathlibPath|nil
 ---@param skip_redraw boolean|nil # Rerenders the tree when everything is done.
 function Filetree:toggle_directory(_node, path_to_reveal, skip_redraw)
-  local timer = os.clock()
   if not _node then
     _node = self.tree:get_node()
-    nio.elapsed("no node, get node at line.", timer)
   end
   if not _node or _node.type ~= "directory" then
+    log.time_it("_node not a directory ", _node and _node.id, _node and _node.type)
     return
   end
   ---@type NuiTreeNode|NeotreeSourceItem
   local node = _node
+  log.time_it("valid node: ", node.id)
   self.explicitly_opened_directories = self.explicitly_opened_directories or {}
   if node.loaded == false then
-    nio.elapsed("node.loaded = false", timer)
     self:fill_tree(node:get_id(), 1, path_to_reveal)
-    nio.elapsed("self:fill_tree", timer)
   end
   if node:has_children() then
     local updated = false
@@ -338,13 +335,10 @@ function Filetree:toggle_directory(_node, path_to_reveal, skip_redraw)
       self.explicitly_opened_directories[node:get_id()] = true
     end
     if path_to_reveal then
-      nio.elapsed("is path_to_reveal", timer)
       self:focus_node(path_to_reveal:tostring())
-      nio.elapsed("self:focus_node", timer)
-      return renderer.redraw(self)
+      updated = true
     end
     if updated and not skip_redraw then
-      nio.elapsed("has an update", timer)
       return renderer.redraw(self)
     end
   end

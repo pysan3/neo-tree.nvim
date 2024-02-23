@@ -244,7 +244,11 @@ function Manager:done(state, requested_window_width, requested_curpos)
     end
     renderer.position.save(state)
     state.position = vim.tbl_extend("force", state.position, requested_curpos or {})
-    log.fmt_trace("updated_by_user: %s, position: %s", state.cursor_update_by_user, state.position)
+    log.fmt_trace(
+      "updated_by_user: %s, position: %s",
+      state.cursor_update_by_user or false,
+      state.position or {}
+    )
     if state.cursor_update_by_user then
       renderer.position.clear(state)
     else
