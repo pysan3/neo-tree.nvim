@@ -65,6 +65,8 @@ end
 ---@field outfile NeotreePathString
 ---@field config NeotreeLogConfig
 ---@field level table<string, integer>
+---@field __timer_start integer|nil
+---@field __timer_label string|nil
 ---@field [NeotreeConfig.log_level] NeotreeLogFunc
 ---@field [NeotreeLogFmt] NeotreeLogFunc
 local log = {}
@@ -94,6 +96,14 @@ end
 ---@param level string # Any messages above this level will be logged.
 log.set_level = function(level) ---@diagnostic disable-line
   error(string.format("Neotree log: call `log.new` first. %s", level))
+end
+
+log.timer_start = function(label)
+  error("Neotree log: call `log.new` first. " .. label)
+end
+
+log.time_it = function(...)
+  error("Neotree log: call `log.new` first.")
 end
 
 ---Initiate a log instance.
@@ -210,6 +220,19 @@ log.new = function(config, standalone)
         return string.format(fmt, unpack(inspected))
       end)
     end
+  end
+
+  obj.timer_start = function(label)
+    obj.__timer_start = os.clock()
+    obj.__timer_label = label
+  end
+  obj.time_it = function(...)
+    if not obj.__timer_start then
+      obj.timer_start("")
+    end
+    local elapsed = os.clock() - obj.__timer_start
+    local async = require("neo-tree.utils.nio_wrapper").current_task() and "on" or "off"
+    obj.trace(string.format("%s async(%s) %.3f sec: %s", obj.__timer_label, async, elapsed), ...)
   end
 
   return obj
