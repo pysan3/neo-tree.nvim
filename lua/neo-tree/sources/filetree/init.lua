@@ -343,11 +343,11 @@ function Filetree:fill_tree(parent_id, depth, reveal_path)
         return dir:len() - cwd_len >= old_depth or __old_skip_dir(dir)
       end
     end
-    local tasks_name = string.format("fill_tree-%s-%s", depth, reveal_path)
+    local tasks_name = string.format("fill_tree-%s-%s-%s", parent_id, depth, reveal_path)
     ---@type table<string, NuiTree.Node[]> # { parent_id: [nodes to be added] }
     local nodes = vim.defaulttable()
     local root = tree:get_node(parent_id or self.dir:tostring())
-    if root and not root.loaded then
+    if root then
       for path in root.pathlib:fs_iterdir(false, depth, skip_dir) do
         self:add_task(function()
           local node = tree:get_node(path:tostring())
@@ -366,9 +366,9 @@ function Filetree:fill_tree(parent_id, depth, reveal_path)
       return a:len() < b:len()
     end)
     for _, key in ipairs(keys) do
-      tree:set_nodes(nodes[key], key)
-      local node = tree:get_node(key)
-      -- node.loaded = true
+      for _, node in ipairs(nodes[key]) do
+        tree:add_node(node, key)
+      end
     end
   end) -- release tree lock
   if self.use_libuv_file_watcher then
