@@ -120,14 +120,18 @@ function Source:navigate(dir, path_to_reveal, window_width, manager, failed_args
   if not self.bufnr then
     self.bufnr = vim.api.nvim_create_buf(false, false)
   end
-  -- local should_auto_expand = self.window.auto_expand_width and state.current_position ~= "float"
-  -- local should_pre_render = should_auto_expand or state.current_position == "current"
-  -- if not self.window.auto_expand_width then
-  --   window_width.strict = true
-  -- end
   self:prepare_rendar_args(window_width, not window_width.strict)
-  local items = {}
+  local items = {} -- fill in the items here.
   self:show_nodes(items, self.tree, nil, self.config.group_empty_dirs and Path.sep_str or nil)
+  if path_to_reveal then
+    self:focus_node(path_to_reveal:tostring())
+  end
+  nio.run(function()
+    self:redraw(manager)
+  end, function(success)
+    -- callback: called right after the above async function is finished.
+    log.time_it(string.format("self:redraw (fail: %s)", not success))
+  end)
 end
 
 ---Redraw the tree without relaoding from the source.
@@ -135,72 +139,47 @@ end
 ---@param request_window_width integer|nil
 ---@param curpos NeotreeCursorPos|nil
 function Source:redraw(manager, request_window_width, curpos)
-  nio.elapsed("inside source:redraw", manager.__timer_start)
+  log.time_it("state:redraw start.")
+  if self.focused_node then
+    self:focus_node(self.focused_node)
+  end
+  local acquired = false
+  self:cancel_all_tasks("render_tree")
+  -- start new render
   self:add_task(
     function()
-      nio.elapsed("inside add_task", manager.__timer_start)
-      if self.focused_node then
-        self:focus_node(self.focused_node)
-        nio.elapsed("is focused node", manager.__timer_start)
-      end
       self._tree_lock.acquire()
-      nio.elapsed("inside modify_tree", manager.__timer_start)
-      vim.schedule(function()
-        renderer.position.save(self)
-        nio.elapsed("position save: " .. vim.inspect(self.position), manager.__timer_start)
-        self:render_tree(self.tree)
-        nio.elapsed("after render_tree", manager.__timer_start)
-        self._tree_lock.release()
-      end)
-      self:modify_tree(function()
-        nio.elapsed("tree recaptured", manager.__timer_start)
-      end)
+      acquired = true
+      log.time_it("tree mutex acquired")
+      nio.scheduler()
+      renderer.position.save(self)
+      self.cursor_update_by_user = false
+      self:start_cursor_monitor()
+      self:render_tree(self.tree)
+      log.time_it("render_tree done")
+      if self.focused_node and not curpos then
+        local node, linenr = self.tree:get_node(self.focused_node)
+        if node and linenr then
+          curpos = { lnum = linenr, col = string.len(node.indent or "") }
+          local _msg = "focus node: %s, linenr: %s, curpos: %s"
+          log.fmt_trace(_msg, node:get_id(), linenr, vim.inspect(curpos))
+          self.focused_node = nil
+        end
+      end
+      manager:done(self, request_window_width or self.render_args.longest_node, curpos)
     end,
     "render_tree",
     function(success)
-      if not success then
-        vim.schedule(function()
-          vim.print("render_tree failed")
-        end)
-      end
-      self._tree_lock.release()
+      log.time_it(string.format("%s redraw success: %s, acquired: %s", self.id, success, acquired))
+      return acquired and self._tree_lock.release()
     end
   )
-  nio.run(function()
-    nio.elapsed("start watching for render_tree", manager.__timer_start)
-    self:wait_only_last_task("render_tree")
-    nio.elapsed("last render_tree task done", manager.__timer_start)
-    if self.focused_node and not curpos then
-      local node, linenr = self.tree:get_node(self.focused_node)
-      nio.elapsed("is curpos and get node", manager.__timer_start)
-      nio.elapsed("focused_node: " .. (self.focused_node or nil), manager.__timer_start)
-      if node and linenr then
-        curpos = { lnum = linenr, col = string.len(node.indent or "") }
-        nio.elapsed(
-          string.format(
-            [[node: %s, linenr: %s, curpos: %s]],
-            node:get_id(),
-            linenr,
-            vim.inspect(curpos)
-          ),
-          manager.__timer_start
-        )
-        self.focused_node = nil
-        nio.elapsed("curpos found", manager.__timer_start)
-      end
-    end
-    manager:done(self, request_window_width or self.render_args.longest_node, curpos)
-  end)
 end
 
 function Source:focus_node(node_id)
   self:modify_tree(function(tree)
     local node, linenr = self.tree:get_node(node_id)
-    if not node then
-      log.error("node %s not found.", node_id)
-      self.focused_node = node_id
-    end
-    if not linenr then
+    if node and not linenr then
       locals.expand_to_node(tree, node)
       self.focused_node = node_id
     end
@@ -236,16 +215,15 @@ function Source:show_nodes(source_items, tree, parent_id, group_empty_with)
     end
   end
   local visibility = {}
-  ---@diagnostic disable start
   -- HACK: Special code to work with filesystem source, and keep backwards compatibility.
+  ---@diagnostic disable start
   if self.config.filtered_items then
     visibility.all_files = self.config.filtered_items.visible
     visibility.in_empty_folder = self.config.filtered_items.force_visible_in_empty_folder
   end
   ---@diagnostic disable end
   local expanded_node_ids = locals.get_node_id_list(tree, parent_id, function(node)
-    -- return node:is_expanded()
-    return node.pathlib:is_dir(true)
+    return node:is_expanded()
   end)
   -- draw the given nodes
   if source_items and #source_items > 0 then
@@ -279,10 +257,10 @@ function Source:render_tree(tree, linenr_start)
   if self.render_args.in_pre_render then
     tree:render(linenr_start)
     self.render_args.in_pre_render = false
-    -- if old_longest_node >= self.render_args.longest_node then
-    --   -- Current tree fits into the width. No need to rerender.
-    --   return old_longest_node
-    -- end
+    if old_longest_node >= self.render_args.longest_node then
+      -- Current tree fits into the width. No need to rerender.
+      return old_longest_node
+    end
   end
   tree:render(linenr_start)
   return self.render_args.longest_node
@@ -373,16 +351,6 @@ function Source:prepare_node(item)
       end
     end
   end
-  if item.wanted_width > self.render_args.longest_node then
-    vim.print(string.format([[line:content(): %s]], vim.inspect(line:content())))
-    vim.print(string.format([[item.wanted_width: %s]], vim.inspect(item.wanted_width)))
-    vim.print(
-      string.format(
-        [[self.render_args.in_pre_render: %s]],
-        vim.inspect(self.render_args.in_pre_render)
-      )
-    )
-  end
   if self.render_args.in_pre_render then
     item.line = line
     if item.wanted_width > self.render_args.longest_node then
@@ -401,11 +369,12 @@ function Source:modify_tree(cb)
     self._tree_lock = nio.semaphore(1)
   end
   self._tree_lock.acquire()
-  cb(self.tree)
-  print("================================")
-  print(debug.traceback("CB done"))
-  print("================================")
+  local result = { pcall(cb, self.tree) }
   self._tree_lock.release()
+  if not result[1] then
+    error(unpack(result, 2))
+  end
+  return unpack(result, 2)
 end
 
 ---Filter items and separate into 2 tables: `visible` and `hidden`.
@@ -556,6 +525,19 @@ function locals.convert(source_items, visibility, level, group_with)
   return nodes
 end
 
+function Source:start_cursor_monitor()
+  vim.api.nvim_create_autocmd("CursorMoved", {
+    once = true,
+    desc = "Neo-tree: monitor cursor movement from user.",
+    buffer = self.bufnr,
+    callback = function()
+      if vim.api.nvim_get_current_buf() == self.bufnr then
+        self.cursor_update_by_user = true
+      end
+    end,
+  })
+end
+
 function Source:i_am_a_valid_source()
   -- `Source` is an example. All child classes will be valid neo-tree source
   return self.name ~= Source.name
@@ -573,13 +555,13 @@ function Source:add_task(func, batch_name, cb)
   end
   local _batch = self._workers[batch_name]
   _batch.index = _batch.index + 1
-  _batch[_batch.index] = nio.run(func, cb or function() end)
+  _batch[_batch.index] = nio.run(func, cb)
   return _batch[_batch.index]
 end
 
----@param until_now boolean|nil # If true, only waits tasks registered until this function was called. Otherwise, waits for all tasks registered throughout the instance.
 ---@param batch_name string|nil # Unique name for batch. If nil, refers to global task list.
-function Source:wait_all_tasks(until_now, batch_name)
+---@param until_now boolean|nil # If true, only waits tasks registered until this function was called. Otherwise, waits for all tasks registered throughout the instance.
+function Source:wait_all_tasks(batch_name, until_now)
   batch_name = batch_name or "__global_workers"
   if not self._workers or not self._workers[batch_name] then
     return
@@ -594,14 +576,14 @@ function Source:wait_all_tasks(until_now, batch_name)
 end
 
 ---@param batch_name string|nil # Unique name for batch. If nil, refers to global task list.
-function Source:wait_only_last_task(batch_name)
+function Source:cancel_all_tasks(batch_name)
   batch_name = batch_name or "__global_workers"
   if not self._workers or not self._workers[batch_name] then
     return
   end
   local _batch = self._workers[batch_name]
   -- Block exec until other setups is completed
-  local done = nio.wait_last_only(_batch, _batch.done + 1)
+  local done = nio.cancel_all(_batch, _batch.done + 1)
   if done > _batch.done then
     _batch.done = done
   end
