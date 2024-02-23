@@ -128,9 +128,9 @@ function Source:navigate(dir, path_to_reveal, window_width, manager, failed_args
   end
   nio.run(function()
     self:redraw(manager)
-  end, function(success)
+  end, function(success, err)
     -- callback: called right after the above async function is finished.
-    log.time_it(string.format("self:redraw (fail: %s)", not success))
+    log.time_it(string.format("self:redraw: fail: %s, err: %s", not success, err))
   end)
 end
 
@@ -541,6 +541,14 @@ end
 function Source:i_am_a_valid_source()
   -- `Source` is an example. All child classes will be valid neo-tree source
   return self.name ~= Source.name
+end
+
+function Source:__debug_visualize_tree(id, indent)
+  local nodes = self.tree:get_nodes(id)
+  for _, node in ipairs(nodes) do
+    print(string.rep(" ", node:get_depth() * (indent or 2)) .. node:get_id())
+    self:__debug_visualize_tree(node:get_id(), indent)
+  end
 end
 
 ---@param func function # Function called as a nio task. Job will be captured to `batch_name` task list.

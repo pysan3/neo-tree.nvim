@@ -91,17 +91,6 @@ function Filetree.new(config, id, dir)
   --     end,
   --   })
   -- end
-
-  -- fill in rest of the tree async
-  if nio.check_nio_install() then
-    nio.run(function()
-      -- TODO: Call this incrementally.
-      -- self:fill_tree(nil, nil, nil)
-      -- if self.enable_git_status then
-      --   self:fill_git_state(true)
-      -- end
-    end)
-  end
   return self
 end
 
@@ -185,63 +174,30 @@ function Filetree:navigate(dir, path_to_reveal, window_width, manager, failed_ar
     local reason = string.format("Dir %s does not exist.", self.dir)
     return manager:fail(reason, nil, self, dir, path_to_reveal, window_width, failed_args)
   end
-  -- local should_auto_expand = self.window.auto_expand_width and state.current_position ~= "float"
-  -- local should_pre_render = should_auto_expand or state.current_position == "current"
-  -- if not self.window.auto_expand_width then
-  --   window_width.strict = true
-  -- end
-  -- if not path_to_reveal then
-  --   if self.dir:basename() == "linux" then
-  --     path_to_reveal = self.dir
-  --       / "drivers/gpu/drm/nouveau/include/nvrm/535.113.01/common/sdk/nvidia/inc/ctrl/ctrl0073/ctrl0073specific.h"
-  --   else
-  --     path_to_reveal = self.dir / "lua/neo-tree/sources/document_symbols/lib/client_filters.lua"
-  --   end
-  -- end
   if path_to_reveal then
     self:add_task(function()
       self:fill_tree(nil, 0, path_to_reveal)
     end)
   end
-  nio.elapsed("start", manager.__timer_start)
   self:prepare_rendar_args(window_width, not window_width.strict)
-  nio.elapsed([[prepare_rendar_args]], manager.__timer_start)
   self:wait_all_tasks()
-  nio.elapsed([[wait_all_tasks]], manager.__timer_start)
   -- TODO: local group_with = self.config.group_empty_dirs and Path.sep_str or nil
   -- local request_window_width = self:show_nodes(nil, self.tree, nil, group_with)
   self:show_nodes(nil, self.tree, nil, nil)
-  nio.elapsed([[show_nodes]], manager.__timer_start)
   if path_to_reveal then
     self:focus_node(path_to_reveal:tostring())
   end
-  self:redraw(manager)
-  nio.elapsed([[redraw]], manager.__timer_start)
+  nio.wait(nio.run(function()
+    self:redraw(manager)
+  end, function(success, err)
+    -- callback: called right after the above async function is finished.
+    log.time_it(string.format("self:redraw: fail: %s, err: %s", not success, err))
+  end))
 end
 
----Optimize filtered items
----@param filtered_items NeotreeConfig.filesystem.filtered_items
-function locals.purify_filtered_items(filtered_items)
-  ---@type any
-  local res = filtered_items
-  ---@cast res NeotreeConfig.filesystem.filtered_items_optimized
-  for _, file in ipairs(filtered_items.hide_by_name or {}) do
-    res.hide_by_name[file] = true
-  end
-  for _, file in ipairs(filtered_items.always_show or {}) do
-    res.always_show[file] = true
-  end
-  for _, file in ipairs(filtered_items.never_show or {}) do
-    res.never_show[file] = true
-  end
-  for index, value in ipairs(filtered_items.hide_by_pattern or {}) do
-    res.hide_by_pattern[index] = glob.globtopattern(value)
-  end
-  for index, value in ipairs(filtered_items.never_show_by_pattern or {}) do
-    res.never_show_by_pattern[index] = glob.globtopattern(value)
-  end
-  return res
-end
+--          ╭─────────────────────────────────────────────────────────╮
+--          │                     Filesystem Scan                     │
+--          ╰─────────────────────────────────────────────────────────╯
 
 ---Update path.git_status for all known paths.
 function Filetree:fill_git_state()
@@ -251,6 +207,227 @@ function Filetree:fill_git_state()
   end
   pathlib_git.fill_git_state(paths)
 end
+
+---Fill tree until depth.
+---@param parent_id string|nil # The node id of where to start from. If nil, uses the root node.
+---@param depth integer|nil # Depth to dig into. If nil, goes all the way.
+---@param reveal_path PathlibPath|nil # Ignores depth limit and digs until this path.
+function Filetree:fill_tree(parent_id, depth, reveal_path)
+  self:modify_tree(function(tree)
+    local cwd_len = self.dir:len()
+    local root = tree:get_node(parent_id or self.dir:tostring())
+    if not root then
+      return
+    end
+    local reveal_node = reveal_path and tree:get_node(reveal_path:tostring())
+    if reveal_node and depth and reveal_path and reveal_path:len() - cwd_len >= depth then
+      return -- reveal target already exists.
+    end
+    local opts = { depth = depth, fallback = function() end }
+    if depth and reveal_path then
+      opts = locals.skipf_reveal_parent(self.dir, opts.depth, reveal_path, opts.fallback)
+    end
+    if self.config.scan_mode == "deep" then
+      opts = locals.skipf_scan_deep(self.dir, opts.depth, self.config.filtered_items, opts.fallback)
+    end
+    ---@type table<string, NuiTree.Node[]> # { parent_id: [nodes to be added] }
+    local nodes = vim.defaulttable()
+    local tasks_name = string.format("fill_tree-%s-%s-%s", parent_id, depth, reveal_path)
+    for path in root.pathlib:fs_iterdir(false, opts.depth, opts.skip_dir) do
+      self:add_task(function()
+        local node = tree:get_node(path:tostring())
+        if not node then
+          node = locals.new_node(path, path:len() - cwd_len)
+          local _parent = node.pathlib:parent_assert():tostring()
+          table.insert(nodes[_parent], node)
+        end
+        node.is_reveal_target = reveal_path and path == reveal_path or false
+      end, tasks_name)
+    end
+    self:wait_all_tasks(tasks_name, false)
+    local keys = vim.tbl_keys(nodes)
+    table.sort(keys, function(a, b)
+      return a:len() < b:len()
+    end)
+    for _, key in ipairs(keys) do
+      for _, node in ipairs(nodes[key]) do
+        tree:add_node(node, key)
+      end
+    end
+    if self.use_libuv_file_watcher then
+      local node_table = tree.nodes.by_id --[[@as table<any, NeotreeSourceItem>]]
+      for _, node in pairs(node_table) do
+        self:assign_file_watcher(node.pathlib)
+      end
+    end
+  end)
+end
+
+function locals.skipf_reveal_parent(cwd, depth, reveal_path, fallback)
+  local cwd_len = cwd:len()
+  local reveal_string = reveal_path:absolute():tostring()
+  local new_depth = math.max(depth, reveal_path:len() - cwd_len)
+  return {
+    depth = new_depth,
+    skip_dir = function(dir)
+      if vim.startswith(reveal_string, dir:tostring()) then
+        return false
+      end
+      return dir:len() - cwd_len >= depth or fallback(dir)
+    end,
+  }
+end
+
+function locals.skipf_scan_deep(cwd, depth, filtered_items_config, fallback)
+  local cwd_len = cwd:len()
+  return {
+    depth = nil,
+    skip_dir = function(dir)
+      for child in dir:fs_iterdir(false, 1) do
+        local name = child:basename()
+        if
+          filtered_items_config.never_show[name]
+          or utils.is_filtered_by_pattern(
+            filtered_items_config.never_show_by_pattern,
+            child:tostring(),
+            name
+          )
+        then
+        else
+          return true
+        end
+      end
+      return dir:len() - cwd_len >= depth or fallback(dir)
+    end,
+  }
+end
+
+--          ╭─────────────────────────────────────────────────────────╮
+--          │                        Commands                         │
+--          ╰─────────────────────────────────────────────────────────╯
+
+---Expands or collapses the current node.
+---comment
+---@param _node NuiTreeNode|nil # If nil, uses root node.
+---@param path_to_reveal PathlibPath|nil
+---@param skip_redraw boolean|nil # Rerenders the tree when everything is done.
+function Filetree:toggle_directory(_node, path_to_reveal, skip_redraw)
+  local timer = os.clock()
+  if not _node then
+    _node = self.tree:get_node()
+    nio.elapsed("no node, get node at line.", timer)
+  end
+  if not _node or _node.type ~= "directory" then
+    return
+  end
+  ---@type NuiTreeNode|NeotreeSourceItem
+  local node = _node
+  self.explicitly_opened_directories = self.explicitly_opened_directories or {}
+  if node.loaded == false then
+    nio.elapsed("node.loaded = false", timer)
+    self:fill_tree(node:get_id(), 1, path_to_reveal)
+    nio.elapsed("self:fill_tree", timer)
+  end
+  if node:has_children() then
+    local updated = false
+    if node:is_expanded() then
+      updated = node:collapse()
+      self.explicitly_opened_directories[node:get_id()] = false
+    else
+      updated = node:expand()
+      self.explicitly_opened_directories[node:get_id()] = true
+    end
+    if path_to_reveal then
+      nio.elapsed("is path_to_reveal", timer)
+      self:focus_node(path_to_reveal:tostring())
+      nio.elapsed("self:focus_node", timer)
+      return renderer.redraw(self)
+    end
+    if updated and not skip_redraw then
+      nio.elapsed("has an update", timer)
+      return renderer.redraw(self)
+    end
+  end
+end
+
+--          ╭─────────────────────────────────────────────────────────╮
+--          │                      File Watcher                       │
+--          ╰─────────────────────────────────────────────────────────╯
+
+---A helper function to assign file watcher to rerender on file update to `pathlib`.
+---@param pathlib PathlibPath
+function Filetree:assign_file_watcher(pathlib)
+  pathlib:register_watcher(self.id .. "luv_filewatcher", function(_p, args)
+    -- -- vim.print(string.format([[_p: %s]], _p))
+    -- -- local dir = args.dir
+    -- -- args.dir = nil
+    -- -- vim.print(string.format([[args (except dir): %s]], vim.inspect(args)))
+    -- -- args.dir = dir
+    -- -- vim.print(string.format([[args.dir: %s]], args.dir))
+    -- local do_redraw = false
+    -- if args.events.change then -- file has been modified
+    -- end
+    -- if args.events.rename and _p:basename() == args.filename then -- file has been removed
+    --   self:modify_tree(function()
+    --     local removed = self:remove_node_recursive(_p:tostring())
+    --     do_redraw = removed and true or false
+    --   end)
+    -- elseif args.events.rename and _p == args.dir then -- file has been added
+    --   self:modify_tree(function(_tree)
+    --     local new_path = _p:child(args.filename)
+    --     if not _tree:get_node(new_path:tostring()) then
+    --       self:assign_file_watcher(new_path)
+    --       local new_node = locals.new_node(new_path, new_path:len() - self.dir:len())
+    --       _tree:add_node(new_node, _p:tostring())
+    --       do_redraw = true
+    --     end
+    --   end)
+    -- end
+    -- if do_redraw then
+    --   renderer.redraw(self)
+    -- end
+    -- -- events.fire_event(events.FS_EVENT, { afile = _p:tostring() })
+  end)
+end
+
+function Filetree:remove_node_recursive(node_id)
+  ---@type NuiTreeNode|NeotreeSourceItem|nil
+  local node = self.tree:get_node(node_id)
+  if not node then
+    return false
+  end
+  if node:has_children() then
+    for _, child_id in ipairs(node:get_child_ids()) do
+      self:remove_node_recursive(child_id)
+    end
+  end
+  node.pathlib:unregister_watcher()
+  node.pathlib = nil
+  return self.tree:remove_node(node_id)
+end
+
+---Update `self.tree` on a file rename.
+---@param tree NuiTree
+---@param parent PathlibPath # Parent directory
+---@param filename string # Basename of the new filename.
+function locals.update_tree_rename(tree, parent, filename)
+  local parent_node = tree:get_node(parent:tostring())
+  if not parent_node then
+    log.warn("Unknown path updated. " .. parent:tostring())
+    return
+  end
+  for _, child in ipairs(tree:get_nodes(parent:tostring())) do
+    if not child.pathlib:exists() then
+      tree:remove_node(child:get_id())
+    end
+  end
+  local new = locals.new_node(parent:child(filename), parent_node.level + 1)
+  tree:add_node(new, parent:tostring())
+end
+
+--          ╭─────────────────────────────────────────────────────────╮
+--          │                        Utilities                        │
+--          ╰─────────────────────────────────────────────────────────╯
 
 function locals.new_node(path, level)
   -- TODO: Cache results.
@@ -298,207 +475,28 @@ function locals.new_node(path, level)
   return NuiTree.Node(item, {})
 end
 
----Fill tree until depth.
----@param parent_id string|nil # The node id of where to start from. If nil, uses the root node.
----@param depth integer|nil # Depth to dig into. If nil, goes all the way.
----@param reveal_path PathlibPath|nil # Ignores depth limit and digs until this path.
-function Filetree:fill_tree(parent_id, depth, reveal_path)
-  self:modify_tree(function(tree)
-    local skip_dir = function(dir)
-      local node = tree:get_node(dir:tostring())
-      return node and node.loaded
-    end
-    local cwd_len = self.dir:len()
-    if depth and reveal_path then
-      local old_depth = depth
-      local reveal_string = reveal_path:absolute():tostring()
-      depth = math.max(depth, reveal_path:len() - cwd_len)
-      local __old_skip_dir = skip_dir
-      skip_dir = function(dir)
-        if vim.startswith(reveal_string, dir:tostring()) then
-          return false
-        end
-        return dir:len() - cwd_len >= old_depth or __old_skip_dir(dir)
-      end
-    end
-    if self.config.scan_mode == "deep" then
-      local old_depth = depth
-      depth = nil
-      local __old_skip_dir = skip_dir
-      skip_dir = function(dir)
-        for child in dir:fs_iterdir(false, 1) do
-          local name = child:basename()
-          if
-            self.config.filtered_items.never_show[name]
-            or utils.is_filtered_by_pattern(
-              self.config.filtered_items.never_show_by_pattern,
-              child:tostring(),
-              name
-            )
-          then
-          else
-            return true
-          end
-        end
-        return dir:len() - cwd_len >= old_depth or __old_skip_dir(dir)
-      end
-    end
-    local tasks_name = string.format("fill_tree-%s-%s-%s", parent_id, depth, reveal_path)
-    ---@type table<string, NuiTree.Node[]> # { parent_id: [nodes to be added] }
-    local nodes = vim.defaulttable()
-    local root = tree:get_node(parent_id or self.dir:tostring())
-    if root then
-      for path in root.pathlib:fs_iterdir(false, depth, skip_dir) do
-        self:add_task(function()
-          local node = tree:get_node(path:tostring())
-          if not node then
-            node = locals.new_node(path, path:len() - cwd_len)
-            local _parent = node.pathlib:parent_assert():tostring()
-            table.insert(nodes[_parent], node)
-          end
-          node.is_reveal_target = reveal_path and path == reveal_path or false
-        end, tasks_name)
-      end
-    end
-    self:wait_all_tasks(false, tasks_name)
-    local keys = vim.tbl_keys(nodes)
-    table.sort(keys, function(a, b)
-      return a:len() < b:len()
-    end)
-    for _, key in ipairs(keys) do
-      for _, node in ipairs(nodes[key]) do
-        tree:add_node(node, key)
-      end
-    end
-  end) -- release tree lock
-  if self.use_libuv_file_watcher then
-    self:modify_tree(function(tree)
-      local node_table = tree.nodes.by_id --[[@as table<any, NeotreeSourceItem>]]
-      for _, node in pairs(node_table) do
-        self:assign_file_watcher(node.pathlib)
-      end
-    end)
+---Optimize filtered items
+---@param filtered_items NeotreeConfig.filesystem.filtered_items
+function locals.purify_filtered_items(filtered_items)
+  ---@type any
+  local res = filtered_items
+  ---@cast res NeotreeConfig.filesystem.filtered_items_optimized
+  for _, file in ipairs(filtered_items.hide_by_name or {}) do
+    res.hide_by_name[file] = true
   end
-end
-
-function Filetree:visualize_tree(id, indent)
-  local nodes = self.tree:get_nodes(id)
-  for _, node in ipairs(nodes) do
-    print(string.rep(" ", node:get_depth() * (indent or 2)) .. node.name)
-    self:visualize_tree(node:get_id(), indent)
+  for _, file in ipairs(filtered_items.always_show or {}) do
+    res.always_show[file] = true
   end
-end
-
----Update `self.tree` on a file rename.
----@param tree NuiTree
----@param parent PathlibPath # Parent directory
----@param filename string # Basename of the new filename.
-function locals.update_tree_rename(tree, parent, filename)
-  local parent_node = tree:get_node(parent:tostring())
-  if not parent_node then
-    log.warn("Unknown path updated. " .. parent:tostring())
-    return
+  for _, file in ipairs(filtered_items.never_show or {}) do
+    res.never_show[file] = true
   end
-  for _, child in ipairs(tree:get_nodes(parent:tostring())) do
-    if not child.pathlib:exists() then
-      tree:remove_node(child:get_id())
-    end
+  for index, value in ipairs(filtered_items.hide_by_pattern or {}) do
+    res.hide_by_pattern[index] = glob.globtopattern(value)
   end
-  local new = locals.new_node(parent:child(filename), parent_node.level + 1)
-  tree:add_node(new, parent:tostring())
-end
-
----A helper function to assign file watcher to rerender on file update to `pathlib`.
----@param pathlib PathlibPath
-function Filetree:assign_file_watcher(pathlib)
-  pathlib:register_watcher(self.id .. "luv_filewatcher", function(_p, args)
-    vim.print(string.format([[_p: %s]], _p))
-    local dir = args.dir
-    args.dir = nil
-    vim.print(string.format([[args (except dir): %s]], vim.inspect(args)))
-    args.dir = dir
-    vim.print(string.format([[args.dir: %s]], args.dir))
-    if args.events.change then -- file has been modified
-    end
-    if args.events.rename and _p:basename() == args.filename then -- file has been removed
-      self:modify_tree(function(_tree)
-        self:remove_node_recursive(_p:tostring())
-        self:visualize_tree()
-      end)
-    elseif args.events.rename and _p == args.dir then -- file has been added
-      self:modify_tree(function(_tree)
-        local new_path = _p:child(args.filename)
-        self:assign_file_watcher(new_path)
-        local new_node = locals.new_node(new_path, new_path:len() - self.dir:len())
-        _tree:add_node(new_node, _p:tostring())
-        if new_path:is_dir(true) then
-          self:fill_tree(new_node:get_id(), nil, nil)
-        end
-      end)
-    end
-    renderer.redraw(self)
-    -- events.fire_event(events.FS_EVENT, { afile = _p:tostring() })
-  end)
-end
-
-function Filetree:remove_node_recursive(node_id)
-  ---@type NuiTreeNode|NeotreeSourceItem|nil
-  local node = self.tree:get_node(node_id)
-  if not node then
-    return
+  for index, value in ipairs(filtered_items.never_show_by_pattern or {}) do
+    res.never_show_by_pattern[index] = glob.globtopattern(value)
   end
-  if node:has_children() then
-    for _, child_id in ipairs(node:get_child_ids()) do
-      self:remove_node_recursive(child_id)
-    end
-  end
-  node.pathlib:unregister_watcher()
-  node.pathlib = nil
-  self.tree:remove_node(node_id)
-end
-
----Expands or collapses the current node.
----comment
----@param _node NuiTreeNode|nil # If nil, uses root node.
----@param path_to_reveal PathlibPath|nil
----@param skip_redraw boolean|nil # Rerenders the tree when everything is done.
-function Filetree:toggle_directory(_node, path_to_reveal, skip_redraw)
-  local timer = os.clock()
-  if not _node then
-    _node = self.tree:get_node()
-    nio.elapsed("no node, get node at line.", timer)
-  end
-  if not _node or _node.type ~= "directory" then
-    return
-  end
-  ---@type NuiTreeNode|NeotreeSourceItem
-  local node = _node
-  self.explicitly_opened_directories = self.explicitly_opened_directories or {}
-  if node.loaded == false then
-    nio.elapsed("node.loaded = false", timer)
-    self:fill_tree(node:get_id(), 1, path_to_reveal)
-    nio.elapsed("self:fill_tree", timer)
-  end
-  if node:has_children() then
-    local updated = false
-    if node:is_expanded() then
-      updated = node:collapse()
-      self.explicitly_opened_directories[node:get_id()] = false
-    else
-      updated = node:expand()
-      self.explicitly_opened_directories[node:get_id()] = true
-    end
-    if path_to_reveal then
-      nio.elapsed("is path_to_reveal", timer)
-      self:focus_node(path_to_reveal:tostring())
-      nio.elapsed("self:focus_node", timer)
-      return renderer.redraw(self)
-    end
-    if updated and not skip_redraw then
-      nio.elapsed("has an update", timer)
-      return renderer.redraw(self)
-    end
-  end
+  return res
 end
 
 return Filetree, locals
