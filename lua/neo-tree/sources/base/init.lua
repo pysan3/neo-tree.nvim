@@ -140,14 +140,17 @@ end
 ---@param curpos NeotreeCursorPos|nil
 function Source:redraw(manager, request_window_width, curpos)
   log.time_it("state:redraw start.")
-  if self.focused_node then
-    self:focus_node(self.focused_node)
-  end
   local acquired = false
   self:cancel_all_tasks("render_tree")
   -- start new render
   self:add_task(
     function()
+      if self.focused_node then
+        self:focus_node(self.focused_node)
+        log.time_it("focus node: " .. self.focused_node)
+      else
+        log.time_it("no focus node")
+      end
       self._tree_lock.acquire()
       acquired = true
       log.time_it("tree mutex acquired")

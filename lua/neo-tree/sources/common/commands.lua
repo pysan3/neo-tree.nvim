@@ -115,10 +115,13 @@ M.wrap9 = {}
 ---@param callback function|nil # The callback to call when the command is done. Called with the parent node as the argument.
 ---@return PathlibPath[] create
 ---@return NuiTreeNode parent
-M.nowrap.add = function(state, callback)
+M.wrap2.add = function(state, callback)
   local node = get_folder_node(state)
   assert(node, "Failed to find current focused node.")
-  return fs.create_node(node.pathlib, state.dir, false, callback) or {}, node
+  local add_cb = function(paths)
+    return M.call(callback, paths or {}, node)
+  end
+  return fs.create_node(node.pathlib, state.dir, false, add_cb) or {}, node
 end
 
 ---Add a new file or dir at the current node
@@ -667,7 +670,7 @@ end
 ---@param state NeotreeState
 ---@param callback function|nil # The callback to call when the command is done. Called with the parent node as the argument.
 ---@return PathlibPath[]
-M.nowrap.delete = function(state, callback)
+M.wrap2.delete = function(state, callback)
   local node = state.tree:get_node()
   if node and (node.type == "file" or node.type == "directory") then
     return fs.delete_node(node.pathlib, false, callback)
@@ -681,15 +684,15 @@ end
 ---@param state NeotreeState
 ---@param selected_nodes NuiTreeNode[]
 ---@param callback function|nil # The callback to call when the command is done. Called with the parent node as the argument.
-M.nowrap.delete_visual = function(state, selected_nodes, callback)
+M.wrap3.delete_visual = function(state, selected_nodes, callback)
+  log.time_it("delete_visual")
   local paths_to_delete = {}
   for _, node in pairs(selected_nodes) do
     if node.type == "file" or node.type == "directory" then
       table.insert(paths_to_delete, node.pathlib)
     end
   end
-  local removed = fs.delete_nodes(paths_to_delete)
-  return M.call(callback, removed)
+  return fs.delete_nodes(paths_to_delete, callback)
 end
 
 M.nowrap.preview = function(state)
