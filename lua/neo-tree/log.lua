@@ -223,18 +223,28 @@ log.new = function(config, standalone)
   end
 
   obj.timer_start = function(label)
-    obj.__timer_start = os.clock()
+    obj.__timer_start = vim.loop.hrtime()
     obj.__timer_label = label
   end
   obj.time_it = function(...)
+    if obj.levels[obj.config.level] > 1 then
+      -- only do the calculation on obj.config.level == "trace"
+      return
+    end
     if not obj.__timer_start then
       obj.timer_start("")
     end
-    local elapsed = os.clock() - obj.__timer_start
+    local elapsed = (vim.loop.hrtime() - obj.__timer_start) / 1000 / 1000
     local async = require("neo-tree.utils.nio_wrapper").current_task() and " on" or "off"
-    obj.trace(string.format("%s async(%s) %.3f sec:", obj.__timer_label, async, elapsed), ...)
     -- TODO: remove this print and move to log.trace <pysan3>
-    print(string.format("%s async(%s) %.3f sec:", obj.__timer_label, async, elapsed), ...)
+    print(string.format("%s async(%s) %6.2f ms:", obj.__timer_label, async, elapsed), ...)
+    return log_at_level(
+      1,
+      obj.config.modes[1],
+      make_string,
+      string.format("%s async(%s) %6.2f ms:", obj.__timer_label, async, elapsed),
+      ...
+    )
   end
 
   return obj
