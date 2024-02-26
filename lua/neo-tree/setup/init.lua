@@ -513,7 +513,9 @@ M.merge_config = function(user_config, is_auto_config)
   local all_source_names = mgr.setup(user_config)
   require("neo-tree.command.parser").setup(all_source_names)
   mgr.new(user_config, vim.api.nvim_get_current_tabpage())
+
   highlights.setup()
+
   return user_config
 end
 
