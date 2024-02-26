@@ -46,7 +46,7 @@ function M.wrap(func, argc, opts)
 end
 
 function M.scheduler()
-  if M.check_nio_install() then
+  if M.current_task() then
     return M.nio.scheduler()
   end
 end

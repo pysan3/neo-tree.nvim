@@ -2,7 +2,7 @@
 ---@class NeotreeArray.pop<T> : { popleft: (fun(self: any): T), popright: (fun(self: any): T) }
 ---@class NeotreeArray.add<T> : { append: fun(self: any, value: T), extend: fun(self: any, ...: T) }
 ---@class NeotreeArray.extra<T> : { len: (fun(self: any): integer), peek: (fun(self: any, index: integer): T) }
----@class NeotreeArray<T>: { left: integer, right: integer, __data: T[], [integer]: T }
+---@class NeotreeArray<T>: { left: integer, right: integer, __data: T[] }
 
 ---@class NeotreeArray
 local Array = setmetatable({}, {

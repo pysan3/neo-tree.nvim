@@ -118,7 +118,8 @@ M.nowrap.delete_visual = function(state, selected_nodes)
   log.debug(string.format([[#deleted: %s, %s]], #deleted, deleted))
   state:modify_tree(function()
     for _, path in ipairs(deleted) do
-      state:remove_node_recursive(path:tostring())
+      local suc = state:remove_node_recursive(path:tostring())
+      log.time_it(string.format("delte_visual: delete '%s' -> %s", path, suc))
     end
   end)
   renderer.redraw(state)

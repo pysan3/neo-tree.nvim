@@ -1,4 +1,5 @@
 local log = require("neo-tree.log")
+local nio = require("neo-tree.utils.nio_wrapper")
 
 local vim = vim
 if ffi_available then
@@ -185,7 +186,7 @@ M.tbl_equals = function(table1, table2)
   return true
 end
 
-M.execute_command = function(cmd)
+M.execute_command2 = function(cmd)
   local result = vim.fn.systemlist(cmd)
 
   -- An empty result is ok
@@ -619,59 +620,11 @@ M.map = function(tbl, fn)
   return t
 end
 
--- TODO: Move this function to manager.lua or utils
 M.get_appropriate_window = function(state)
-  -- Avoid triggering autocommands when switching windows
-  local eventignore = vim.o.eventignore
-  vim.o.eventignore = "all"
-
-  local current_window = vim.api.nvim_get_current_win()
-
-  -- use last window if possible
-  local suitable_window_found = false
   local mgr = require("neo-tree.manager").get_current()
   if mgr then
-    while mgr.previous_windows:len() > 0 do
-      local prev = mgr.previous_windows:popright()
-      if prev and vim.api.nvim_win_is_valid(prev) then
-        mgr.previous_windows:append(prev) -- put it back
-        suitable_window_found = true
-        vim.api.nvim_set_current_win(prev)
-        break
-      end
-    end
+    return mgr:get_appropriate_window(state)
   end
-  -- find a suitable window to open the file in
-  if not suitable_window_found then
-    if state.current_position == "right" then
-      vim.cmd("wincmd t")
-    else
-      vim.cmd("wincmd w")
-    end
-  end
-  local ignore = {}
-  local attempts = 0
-  while attempts < 5 and not suitable_window_found do
-    local bt = vim.bo.buftype or "normal"
-    if ignore[vim.bo.filetype] or ignore[bt] or M.is_floating() then
-      attempts = attempts + 1
-      vim.cmd("wincmd w")
-    else
-      suitable_window_found = true
-    end
-  end
-  if not suitable_window_found then
-    -- go back to the neotree window, this will forve it to open a new split
-    vim.api.nvim_set_current_win(current_window)
-  end
-
-  local winid = vim.api.nvim_get_current_win()
-  local is_neo_tree_window = vim.bo.filetype == "neo-tree"
-  vim.api.nvim_set_current_win(current_window)
-
-  vim.o.eventignore = eventignore
-
-  return winid, is_neo_tree_window
 end
 
 ---Resolves the width to a number
@@ -1257,6 +1210,23 @@ M.brace_expand = function(s)
     end
   end
   return result
+end
+
+---Execute command via `systemlist` and return its status as well.
+---@param cmd string[] # Command to execute as a list of strings.
+---@param input string[]|nil # Lines to send to stdin.
+---@return boolean success
+---@return string[] result_lines # Each line of the output from the command.
+function M.execute_command(cmd, input)
+  if nio.check_nio_install() and nio.current_task() then
+    return nio.execute_command(cmd, input)
+  end
+  local result = vim.system(cmd, { stdin = input }):wait()
+  if result.code == 0 then
+    return true, vim.split(result.stdout or "", "\n", { plain = true, trimempty = false })
+  else
+    return false, {}
+  end
 end
 
 return M

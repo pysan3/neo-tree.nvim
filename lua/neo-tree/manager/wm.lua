@@ -46,17 +46,14 @@ function M.create_win(position, window_config, window_width, name, bufnr)
     },
   }
   if vim.tbl_contains(e.valid_split_window_positions, position) then
-    print("NuiSplit")
     local window = require("nui.split")(win_options)
     return window
   elseif vim.tbl_contains(e.valid_float_window_positions, position) then
-    print("NuiPopup")
     local sourceTitle = name:gsub("^%l", string.upper)
     win_options = popups.popup_options("Neo-tree " .. sourceTitle, 40, win_options)
     local window = require("nui.popup")(win_options)
     return window
   elseif vim.tbl_contains(e.valid_phantom_window_positions, position) then
-    print("CurrentWin")
     local window = require("neo-tree.manager.current")(win_options)
     return window
   end
