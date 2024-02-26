@@ -31,6 +31,7 @@ local locals = {} -- Functions exported for test purposes
 ---@field position_state table<NeotreeWindowPosId, NeotreeStateId|nil> # What state occupies each position.
 ---@field previous_windows NeotreeArray.integer # Remember the previous window and open files here.
 ---@field window_lookup table<NeotreeWindowPosId, NuiSplit|NuiPopup|NeotreeCurrentWin|nil> # NuiSplit or NuiPopup that is assigned to each window.
+---@field __window_lookup_cache table<integer, NeotreeWindowPosId>
 local Manager = setmetatable({
   -- Attributes defined here will be shared across all instances of Manager
   -- Think it as a class attribute, and put caches, const values here.
@@ -73,6 +74,7 @@ function Manager.new(global_config, tabid)
     previous_position = {},
     position_state = {},
     window_lookup = {},
+    __window_lookup_cache = {},
     previous_windows = require("neo-tree.utils.array").integer(),
   }, Manager)
   Manager.cache[tabid] = self
@@ -88,6 +90,13 @@ function Manager.new(global_config, tabid)
     event = events.VIM_WIN_LEAVE,
     handler = function()
       self:on_win_leave()
+    end,
+  })
+  events.subscribe({
+    id = "__neo_tree_internal_buf_win_enter_" .. self.tabid,
+    event = events.VIM_BUF_WIN_ENTER,
+    handler = function()
+      self:on_buf_win_enter()
     end,
   })
   return self
@@ -199,10 +208,9 @@ end
 function Manager:open_state(state, position, dir, reveal_file)
   if not state.bufnr or not vim.api.nvim_buf_is_loaded(state.bufnr) then
     state.bufnr = vim.api.nvim_create_buf(false, false)
+    log.time_it("invalid bufnr. new:", state.bufnr)
   end
   local window = self:create_win(position, position, state, nil, "TODO", false)
-  local new_posid = locals.get_posid(position, window.winid)
-  self.window_lookup[new_posid] = window
   local window_width = {
     width = vim.api.nvim_win_get_width(window.winid),
     strict = position ~= "left" and position ~= "right",
@@ -224,120 +232,43 @@ function Manager:done(state, requested_window_width, requested_curpos)
   if position ~= "left" and position ~= "right" then
     requested_window_width = nil
   end
-  vim.schedule(function()
-    for pos, state_id in pairs(self.position_state) do
-      if state_id == state.id and pos ~= position then
-        self:close_win(pos)
-      end
+  nio.scheduler()
+  for pos, state_id in pairs(self.position_state) do
+    if state_id == state.id and pos ~= position then
+      self:close_win(pos)
+      log.time_it("Close other win:", pos)
     end
-    log.time_it("Close all other wins.")
-    self.previous_source = state.name
-    self.previous_position[state.name] = position
-    local posid = locals.get_posid(position)
-    local window = self:create_win(posid, position, state, requested_window_width, "TODO", false)
-    local new_posid = locals.get_posid(position, window.winid)
-    self.position_state[new_posid] = state.id
-    if state.scope == e.state_scopes.GLOBAL and locals.pos_is_fixed(new_posid) then -- Also register state to global position table.
-      self.global_position_state[position] = state.id
-    elseif self.global_position_state[position] == state.id then -- State used to be a global state but not anymore.
-      self.global_position_state[position] = nil
-    end
-    renderer.position.save(state)
-    state.position = vim.tbl_extend("force", state.position, requested_curpos or {})
-    log.fmt_trace(
-      "updated_by_user: %s, position: %s",
-      state.cursor_update_by_user or false,
-      state.position or {}
-    )
-    if state.cursor_update_by_user then
-      renderer.position.clear(state)
-    else
-      -- TODO: This is a very nasty workaround
-      -- refactor all renderer.postiion related code later
-      state.winid = window.winid ---@diagnostic disable-line
-      renderer.position.restore(state)
-      renderer.position.clear(state)
-      state.winid = nil ---@diagnostic disable-line
-    end
-    for lhs, opts in pairs(state.config.window.mappings) do
-      local func = opts.func
-      local vfunc = opts.vfunc
-      local config = opts.config or {}
-      for key, value in pairs(config) do
-        if type(value) == "table" then
-          state.config[key] = vim.tbl_deep_extend("force", state.config[key] or {}, value)
-        else
-          state.config[key] = value
-        end
-      end
-      opts = locals.normalize_keymap_opts(opts)
-      window:map("n", lhs, function()
-        return func and nio.run(function()
-          return func(state)
-        end)
-      end, opts)
-      if vfunc then
-        window:map(
-          "v",
-          lhs,
-          nio.wrap(function()
-            local ESC_KEY = vim.api.nvim_replace_termcodes("<ESC>", true, false, true)
-            vim.api.nvim_feedkeys(ESC_KEY, "i", true)
-            vim.schedule(function()
-              local selected_nodes = locals.get_selected_nodes(state)
-              if selected_nodes and #selected_nodes > 0 then
-                nio.run(function()
-                  vfunc(state, selected_nodes)
-                end)
-              end
-            end)
-          end),
-          opts
-        )
-      end
-    end
-    log.time_it("Rendering sequence done!")
-  end)
-end
-
-function locals.get_selected_nodes(state)
-  if state.winid ~= vim.api.nvim_get_current_win() then
-    return nil
   end
-  local start_pos = vim.fn.getpos("'<")[2]
-  local end_pos = vim.fn.getpos("'>")[2]
-  if end_pos < start_pos then
-    -- I'm not sure if this could actually happen, but just in case
-    start_pos, end_pos = end_pos, start_pos
+  self.previous_source = state.name
+  self.previous_position[state.name] = position
+  local posid = locals.get_posid(position)
+  local window = self:create_win(posid, position, state, requested_window_width, "TODO", false)
+  local new_posid = locals.get_posid(position, window.winid)
+  self.position_state[new_posid] = state.id
+  if state.scope == e.state_scopes.GLOBAL and locals.pos_is_fixed(new_posid) then -- Also register state to global position table.
+    self.global_position_state[position] = state.id
+  elseif self.global_position_state[position] == state.id then -- State used to be a global state but not anymore.
+    self.global_position_state[position] = nil
   end
-  local selected_nodes = {}
-  while start_pos <= end_pos do
-    local node = state.tree:get_node(start_pos)
-    if node then
-      table.insert(selected_nodes, node)
-    end
-    start_pos = start_pos + 1
+  renderer.position.save(state)
+  state.position = vim.tbl_extend("force", state.position, requested_curpos or {})
+  log.fmt_trace(
+    "updated_by_user: %s, position: %s",
+    state.cursor_update_by_user or false,
+    state.position or {}
+  )
+  if state.cursor_update_by_user then
+    renderer.position.clear(state)
+  else
+    -- TODO: This is a very nasty workaround
+    -- refactor all renderer.postiion related code later
+    state.winid = window.winid ---@diagnostic disable-line
+    renderer.position.restore(state)
+    renderer.position.clear(state)
+    state.winid = nil ---@diagnostic disable-line
   end
-  return selected_nodes
-end
-
-function locals.normalize_keymap_opts(opts)
-  local valid_keys = {
-    "nowait",
-    "silent",
-    "script",
-    "expr",
-    "unique",
-    "noremap",
-    "desc",
-    "callback",
-    "replace_keycodes",
-  }
-  local res = {}
-  for _, key in ipairs(valid_keys) do
-    res[key] = opts[key]
-  end
-  return res
+  locals.set_keymaps(window, state)
+  log.time_it("Rendering sequence done!")
 end
 
 ---Function called if state fails to render with given args.
@@ -432,6 +363,42 @@ end
 -- │                    Window Management                    │
 -- ╰─────────────────────────────────────────────────────────╯
 
+---Get the first non neo-tree window where hijacking buffer will be sent to.
+---@return integer winid # Appropriate window id to open new buffer.
+---@return boolean is_neo_tree_window # If returned winid is a neo-tree window. When true, try to make a new split yourself.
+function Manager:get_appropriate_window()
+  local eventignore = vim.o.eventignore
+  vim.o.eventignore = "all"
+  local fallback_winid = vim.api.nvim_get_current_win()
+  ---@param winid integer
+  local function callback(winid)
+    vim.api.nvim_set_current_win(winid)
+    local bufnr = vim.api.nvim_win_get_buf(winid)
+    local is_neo_tree_window = vim.bo[bufnr].filetype == "neo-tree"
+    vim.o.eventignore = eventignore
+    return winid, is_neo_tree_window
+  end
+  while self.previous_windows:len() > 0 do
+    local prev = self.previous_windows:popright()
+    if prev and vim.api.nvim_win_is_valid(prev) then
+      self.previous_windows:append(prev) -- put it back
+      return callback(prev)
+    end
+  end
+  local ignore = self.config.open_files_do_not_replace_types or {}
+  for index, winid in ipairs(vim.api.nvim_tabpage_list_wins(0)) do
+    local bt = vim.bo.buftype or "normal"
+    if index > 5 then
+      break -- give up
+    elseif winid == fallback_winid or ignore[vim.bo.filetype] or ignore[bt] then
+    elseif not vim.api.nvim_win_is_valid(winid) or utils.is_floating(winid) then
+    else
+      return callback(winid)
+    end
+  end
+  return callback(fallback_winid)
+end
+
 ---Focus window of `position`. Create one if does not exist.
 ---@param posid NeotreeWindowPosId # Posid to look for. Returns already created window if exists.
 ---@param position NeotreeWindowPosition|nil # Position to create new window. If nil calculates from `posid`.
@@ -441,17 +408,20 @@ end
 ---@param focus boolean|nil # If true, calls nvim_set_current_win.
 function Manager:create_win(posid, position, state, requested_width, name, focus)
   local window = self.window_lookup[posid]
+  log.time_it("create_win:", posid, state.id)
   if not window then
     position = position or locals.get_position(posid)
     window = wm.create_win(position, state.window, requested_width, name, state.bufnr)
-    window.bufnr = state.bufnr
+    log.time_it("no window, created. bufnr:", state.bufnr)
   end
+  window.bufnr = state.bufnr
   window:update_layout({ relative = locals.pos_is_fixed(posid) and "editor" or "win" }) ---@diagnostic disable-line
   window:show() ---@diagnostic disable-line -- lua_ls cannot correctly detect interfaces.
   if not window.winid or not vim.api.nvim_win_is_valid(window.winid) then
     -- purge and retry
-    self.window_lookup[posid]:unmount() ---@diagnostic disable-line -- lua_ls cannot correctly detect interfaces.
-    self.window_lookup[posid] = nil
+    log.time_it("invalid window. start purge and retry", window.winid, window.bufnr)
+    window.bufnr = nil -- don't delete `state.bufnr` tho.
+    self:close_win(posid, true)
     return self:create_win(posid, position, state, requested_width, name, focus)
   end
   if requested_width and vim.api.nvim_win_get_width(window.winid) < requested_width then
@@ -463,12 +433,15 @@ function Manager:create_win(posid, position, state, requested_width, name, focus
   window:on("BufWinLeave", function(args)
     renderer.position.save(state)
   end, { once = true })
+  self.window_lookup[posid] = window
+  self.__window_lookup_cache[window.winid or -1] = posid
   return window
 end
 
 ---Close window in position. Calls `window:unmount()`
 ---@param posid NeotreeWindowPosId
-function Manager:close_win(posid)
+---@param force_unmount boolean|nil # `window:unmount()` instead of `window:hide()`.
+function Manager:close_win(posid, force_unmount)
   local window = posid and self.window_lookup[posid]
   if window then
     local state_id = self.position_state[posid]
@@ -476,7 +449,13 @@ function Manager:close_win(posid)
     if self.global_position_state[posid] == state_id then
       self.global_position_state[posid] = nil
     end
-    window:hide() ---@diagnostic disable-line -- lua_ls cannot correctly detect interfaces.
+    if force_unmount then
+      window:unmount() ---@diagnostic disable-line -- lua_ls cannot correctly detect interfaces.
+      self.window_lookup[posid] = nil
+      self.__window_lookup_cache[window.winid or -1] = nil
+    else
+      window:hide() ---@diagnostic disable-line -- lua_ls cannot correctly detect interfaces.
+    end
     while self.previous_windows:len() > 0 do
       local prev = self.previous_windows:popright()
       if prev and vim.api.nvim_win_is_valid(prev) then
@@ -493,10 +472,12 @@ function Manager:search_win_by_winid(winid)
   if not winid then
     return nil
   end
-  for pos, window in pairs(self.window_lookup) do
-    if window.winid == winid then
-      return pos
-    end
+  local pos = self.__window_lookup_cache[winid]
+  local window = pos and self.window_lookup[pos]
+  if window and window.winid == winid then
+    return pos
+  else
+    self.__window_lookup_cache[winid] = nil
   end
 end
 
@@ -710,6 +691,43 @@ function Manager.setup(user_config)
   return vim.tbl_keys(Manager.source_lookup)
 end
 
+function Manager:on_buf_win_enter()
+  local current_winid = vim.api.nvim_get_current_win()
+  local posid = self:search_win_by_winid(current_winid)
+  if not posid or not locals.pos_is_fixed(posid) then
+    log.time_it("no posid")
+    return
+  end
+  local bufnr = vim.api.nvim_get_current_buf()
+  local window = self.window_lookup[posid]
+  if window and window.bufnr == bufnr then
+    log.time_it("window is neo-tree", bufnr, posid, window and window.bufnr)
+    return
+  end
+  vim.print(string.format([[vim.bo.filetype: %s]], vim.inspect(vim.bo.filetype)))
+  if vim.bo.filetype == "neo-tree" or vim.bo.filetype == "neo-tree-popup" then
+    log.time_it("new neo-tree window", bufnr, window and window.bufnr)
+    return
+  end
+  log.timer_start("on_buf_win_enter")
+  local state = self:get_state(self.position_state[posid])
+  local target_window, is_neo_tree_window = self:get_appropriate_window(state)
+  log.time_it("state:", state.id, target_window, is_neo_tree_window)
+  if not is_neo_tree_window and target_window ~= current_winid then
+    log.time_it("target is not a neo-tree window. sending buffer to ", target_window)
+    vim.api.nvim_win_set_buf(current_winid, state.bufnr)
+    vim.api.nvim_win_set_buf(target_window, bufnr)
+    vim.api.nvim_set_current_win(target_window)
+    return
+  end
+  -- we don't not have any good alternative window.
+  log.time_it("no good alternative window")
+  vim.cmd.sbuffer(bufnr)
+  window.bufnr = nil
+  self:close_win(posid, true)
+  self:done(state)
+end
+
 function Manager:on_tab_enter()
   if vim.api.nvim_get_current_tabpage() == self.tabid then
     for pos, state_id in pairs(self.global_position_state) do
@@ -724,8 +742,7 @@ end
 function Manager:on_win_leave()
   if vim.api.nvim_get_current_tabpage() == self.tabid then
     local winid = vim.api.nvim_get_current_win()
-    local is_neotree = self:search_win_by_winid(winid)
-    if not is_neotree then
+    if not utils.is_floating(winid) and not self:search_win_by_winid(winid) then
       self.previous_windows:append(winid)
     end
   end
@@ -735,6 +752,7 @@ function Manager:shutdown()
   local id_prefix = {
     "__neo_tree_internal_tab_enter_",
     "__neo_tree_internal_win_leave_",
+    "__neo_tree_internal_buf_win_enter_",
   }
   for _, prefix in ipairs(id_prefix) do
     events.unsubscribe({
@@ -885,6 +903,81 @@ locals.skip_this_mapping = {
   ["nop"] = true,
   ["noop"] = true,
 }
+
+function locals.get_selected_nodes(state)
+  local start_pos = vim.fn.getpos("'<")[2]
+  local end_pos = vim.fn.getpos("'>")[2]
+  if end_pos < start_pos then
+    -- I'm not sure if this could actually happen, but just in case
+    start_pos, end_pos = end_pos, start_pos
+  end
+  local selected_nodes = {}
+  while start_pos <= end_pos do
+    local node = state.tree:get_node(start_pos)
+    if node then
+      table.insert(selected_nodes, node)
+    end
+    start_pos = start_pos + 1
+  end
+  return selected_nodes
+end
+
+function locals.normalize_keymap_opts(opts)
+  local valid_keys = {
+    "nowait",
+    "silent",
+    "script",
+    "expr",
+    "unique",
+    "noremap",
+    "desc",
+    "callback",
+    "replace_keycodes",
+  }
+  local res = {}
+  for _, key in ipairs(valid_keys) do
+    res[key] = opts[key]
+  end
+  return res
+end
+
+---Set keybinds using `window:map` for one state.
+---@param window NuiSplit|NuiPopup|NeotreeCurrentWin
+---@param state NeotreeState
+function locals.set_keymaps(window, state)
+  for lhs, opts in pairs(state.config.window.mappings) do
+    local func = opts.func
+    local vfunc = opts.vfunc
+    local config = opts.config or {}
+    for key, value in pairs(config) do
+      if type(value) == "table" then
+        state.config[key] = vim.tbl_deep_extend("force", state.config[key] or {}, value)
+      else
+        state.config[key] = value
+      end
+    end
+    opts = locals.normalize_keymap_opts(opts)
+    window:map("n", lhs, function()
+      return func and nio.run(function()
+        return func(state)
+      end)
+    end, opts)
+    if vfunc then
+      local cb = function()
+        local ESC_KEY = vim.api.nvim_replace_termcodes("<ESC>", true, false, true)
+        vim.api.nvim_feedkeys(ESC_KEY, "i", true)
+        nio.scheduler()
+        local selected_nodes = locals.get_selected_nodes(state)
+        if selected_nodes and #selected_nodes > 0 then
+          nio.run(function()
+            return vfunc(state, selected_nodes)
+          end)
+        end
+      end
+      window:map("v", lhs, cb, opts)
+    end
+  end
+end
 
 function Manager.wait_all_tasks()
   -- Block exec until other setups is completed

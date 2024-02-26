@@ -87,6 +87,7 @@ function M.define_events()
   defauc(events.VIM_TEXT_CHANGED_NORMAL, { "TextChanged" }, 200)
   defauc(events.VIM_WIN_LEAVE, { "WinLeave" })
   defauc(events.VIM_WIN_ENTER, { "WinEnter" }, 0, nil, true)
+  defauc(events.VIM_BUF_WIN_ENTER, { "BufWinEnter" })
 
   defauc(events.GIT_EVENT, { "User FugitiveChanged" }, 100)
   defev(events.GIT_STATUS_CHANGED, { debounce_frequency = 0 })

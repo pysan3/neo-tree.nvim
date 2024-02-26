@@ -49,6 +49,7 @@ local enum = {
   VIM_TEXT_CHANGED_NORMAL = "vim_text_changed_normal",
   VIM_WIN_LEAVE = "vim_win_leave",
   VIM_WIN_ENTER = "vim_win_enter",
+  VIM_BUF_WIN_ENTER = "vim_buf_win_enter",
 }
 
 local M = enum
@@ -74,6 +75,7 @@ M.define_autocmd_event = function(event_name, autocmds, debounce_frequency, seed
       end
       local cmds = {
         "augroup NeoTreeEvent_" .. event_name,
+        "autocmd!",
         "autocmd " .. autocmd .. " " .. callback,
         "augroup END",
       }

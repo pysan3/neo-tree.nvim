@@ -4,12 +4,14 @@ description: A migration guideline to neo-tree v4 for developers and a TODO list
 authors: takuto
 categories:
 created: 2024-02-19T16:25:02+0900
-updated: 2024-02-24T00:04:57+0900
+updated: 2024-02-24T09:01:31+0900
 version: 1.1.1
 @end
 
 * Try Dev Branch
+
 ** Setup Lazy for Devs
+
   Go to the `dev` directory you specify to lazy.nvim.
   @code bash
   git clone git@github.com:pysan3/neo-tree.nvim.git
@@ -64,25 +66,30 @@ version: 1.1.1
    @end
 
 * Roadmap
+
   Here are the list of features that I haven't implemented / tested yet.
   I'll mostly work from top to bottom, but I may skip one or another based on my interests haha.
 
 ** ⬜ Neotree float
+
    I just haven't looked into the nui options.
 
 ** ⬜ Highlights
+
    Least priority for me sadly.
    I'm pretty sure old code will just work as is.
 
-** ⬜ Steal Prevention
+** ✅ Steal Prevention
+
    This is my next big thing to tackle.
 
-   - ( ) autocmd for each manager.
-   - ( ) send current buffer to previous *non* neo-tree window.
+   - (x) send current buffer to previous *non* neo-tree window.
+   -- (x) autocmd for each manager.
    -- (_) update jump info.
    -- (x) remember previous window on WinLeave
 
 ** ✅ Cursor Position Save
+
    - (x) when curpos is saved
    -- (x) close
    --- (x) no need to do this anymore? bufdelete should handle this
@@ -99,6 +106,7 @@ version: 1.1.1
    - ( ) Backport {https://github.com/nvim-neo-tree/neo-tree.nvim/pull/1355}
 
 ** ✅ Keybinds
+
    - (x) Make the code cleaner.
    - (x) assign mappings to bufnr in each source.
    {/ ./lua/neo-tree/ui/renderer.lua} > `set_buffer_mappings`
@@ -130,6 +138,7 @@ version: 1.1.1
     -- ( ) clipboard
 
 ** ⬜ Event Handlers
+
    None of them are correctly triggered, and the API might change in the future.
 
    - ( ) follow current file
@@ -143,11 +152,13 @@ version: 1.1.1
    -- (-) {#  Keybind Commands} disable detecting file addition on neotree keybind.
 
 ** ⬜ Git Watcher
+
    Use `nio.process` to capture git status instead.
    Incremental update when done.
    Debounce.
 
 ** ✅ Tab Sync
+
    On tab switch, recreate the other layouts.
 
    Does not work when left -> right -> top -> right.
@@ -161,11 +172,14 @@ version: 1.1.1
 ** ⬜ Implement `wm.create_win`
 
 ** ⬜ GC old state
+
    Especially window-scoped states when reference is done.
    Call `state:free`.
 
 * Breaking Changes
+
 ** Manager
+
    The biggest rewrite happends at /manager/.
 
    Previously it was `"neo-tree.sources.manager"` which I've moved it to `"neo-tree.manager.init"`.
