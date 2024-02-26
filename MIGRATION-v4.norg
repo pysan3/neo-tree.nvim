@@ -4,7 +4,7 @@ description: A migration guideline to neo-tree v4 for developers and a TODO list
 authors: takuto
 categories:
 created: 2024-02-19T16:25:02+0900
-updated: 2024-02-24T09:01:31+0900
+updated: 2024-02-26T14:00:54+0000
 version: 1.1.1
 @end
 
@@ -74,10 +74,12 @@ version: 1.1.1
 
    I just haven't looked into the nui options.
 
-** ⬜ Highlights
+** ✅ Highlights
 
    Least priority for me sadly.
    I'm pretty sure old code will just work as is.
+
+   - (x) existing code worked as-is!!
 
 ** ✅ Steal Prevention
 
