@@ -966,13 +966,14 @@ function locals.set_keymaps(window, state)
       local cb = function()
         local ESC_KEY = vim.api.nvim_replace_termcodes("<ESC>", true, false, true)
         vim.api.nvim_feedkeys(ESC_KEY, "i", true)
-        nio.scheduler()
-        local selected_nodes = locals.get_selected_nodes(state)
-        if selected_nodes and #selected_nodes > 0 then
-          nio.run(function()
-            return vfunc(state, selected_nodes)
-          end)
-        end
+        vim.schedule(function()
+          local selected_nodes = locals.get_selected_nodes(state)
+          if selected_nodes and #selected_nodes > 0 then
+            nio.run(function()
+              return vfunc(state, selected_nodes)
+            end)
+          end
+        end)
       end
       window:map("v", lhs, cb, opts)
     end

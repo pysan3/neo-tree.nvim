@@ -218,18 +218,18 @@ function Filetree:fill_tree(parent_id, depth, reveal_path)
     if not root then
       return
     end
-    local root_depth = root:get_depth()
+    local root_depth = root:get_depth() - 1 -- we want $PWD to be 0
     local cwd_len = self.dir:len() + root_depth
     local reveal_node = reveal_path and tree:get_node(reveal_path:tostring())
     if reveal_node and depth and reveal_path and reveal_path:len() - cwd_len >= depth then
       return -- reveal target already exists.
     end
-    local opts = { depth = depth, fallback = function() end }
+    local opts = { depth = depth, skip_dir = function() end }
     if depth and reveal_path then
-      opts = locals.skipf_reveal_parent(cwd_len, opts.depth, reveal_path, opts.fallback)
+      opts = locals.skipf_reveal_parent(cwd_len, opts.depth, reveal_path, opts.skip_dir)
     end
     if self.config.scan_mode == "deep" then
-      opts = locals.skipf_scan_deep(cwd_len, opts.depth, self.config.filtered_items, opts.fallback)
+      opts = locals.skipf_scan_deep(cwd_len, opts.depth, self.config.filtered_items, opts.skip_dir)
     end
     ---@type table<string, NuiTree.Node[]> # { parent_id: [nodes to be added] }
     local nodes = vim.defaulttable()
