@@ -57,6 +57,7 @@ local locals = {} -- Functions exported for test purposes
 ---@field current_position NeotreeWindowPosition # READONLY. Set by manager before `self:navigate`.
 ---@field position table # See `ui/renderer.lua > position`
 ---@field scope NeotreeStateScope|nil # Scope of this state.
+---@field clipboard table<string, { action: "copy"|"cut" }>|nil # A table which contains the clipboard state.
 ---@field _workers table<string, nio.tasks.Task[]|{ index: integer, done: integer }>|nil
 ---@field tree NuiTree|nil # Cache NuiTree if possible.
 ---@field _tree_lock nio.control.Semaphore|nil
@@ -179,7 +180,12 @@ function Source:redraw(manager, request_window_width, curpos)
   )
 end
 
+---Try to focus node with `node_id`.
+---@param node_id string|nil # If nil, does nothing.
 function Source:focus_node(node_id)
+  if node_id == nil then
+    return
+  end
   self:modify_tree(function(tree)
     local node, linenr = self.tree:get_node(node_id)
     if node and not linenr then
