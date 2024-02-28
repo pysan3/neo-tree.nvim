@@ -200,6 +200,7 @@ end
 --          ╰─────────────────────────────────────────────────────────╯
 
 ---Update path.git_status for all known paths.
+---@async
 function Filetree:fill_git_state()
   local paths = {}
   for _, node in pairs(self.tree.nodes.by_id) do
@@ -209,52 +210,70 @@ function Filetree:fill_git_state()
 end
 
 ---Fill tree until depth.
+---@async
 ---@param parent_id string|nil # The node id of where to start from. If nil, uses the root node.
 ---@param depth integer|nil # Depth to dig into. If nil, goes all the way.
 ---@param reveal_path PathlibPath|nil # Ignores depth limit and digs until this path.
 function Filetree:fill_tree(parent_id, depth, reveal_path)
   self:modify_tree(function(tree)
-    local root = tree:get_node(parent_id or self.dir:tostring())
-    if not root then
+    local scan_root = tree:get_node(parent_id or self.dir:tostring())
+    if not scan_root then
       return
     end
-    local root_depth = root:get_depth() - 1 -- we want $PWD to be 0
-    local cwd_len = self.dir:len() + root_depth
+    local scan_root_depth = scan_root:get_depth() - 1 -- we want parent_node to be 0
+    -- Scan root's absolute path length. Compared against scanned items to calculate depth.
+    local scan_root_len = self.dir:len() + scan_root_depth
     local reveal_node = reveal_path and tree:get_node(reveal_path:tostring())
-    if reveal_node and depth and reveal_path and reveal_path:len() - cwd_len >= depth then
+    if reveal_node and depth and reveal_path and reveal_path:len() - scan_root_len >= depth then
+      log.time_it("skip fill_tree: reveal_path found")
       return -- reveal target already exists.
     end
-    local opts = { depth = depth, skip_dir = function() end }
-    if depth and reveal_path then
-      opts = locals.skipf_reveal_parent(cwd_len, opts.depth, reveal_path, opts.skip_dir)
+    local opts = locals.skipf_default(scan_root_len, depth, tree)
+    if opts.depth and reveal_path then
+      opts = locals.skipf_reveal_parent(scan_root_len, opts.depth, reveal_path, opts.skip_dir)
     end
     if self.config.scan_mode == "deep" then
-      opts = locals.skipf_scan_deep(cwd_len, opts.depth, self.config.filtered_items, opts.skip_dir)
+      opts =
+        locals.skipf_scan_deep(scan_root_len, opts.depth, self.config.filtered_items, opts.skip_dir)
+    end
+    if opts.skip_dir(scan_root.pathlib) then
+      local msg = "skip fill_tree: skip scan_root (root: %s, depth: %s, reveal: %s, loaded: %s)"
+      log.time_it(string.format(msg, scan_root:get_id(), opts.depth, reveal_path, scan_root.loaded))
+      return -- scan_root is already returns opts.skip_dir(scan_root) == true.
     end
     ---@type table<string, NuiTree.Node[]> # { parent_id: [nodes to be added] }
     local nodes = vim.defaulttable()
     local tasks_name = string.format("fill_tree-%s-%s-%s", parent_id, depth, reveal_path)
-    for path in root.pathlib:fs_iterdir(false, opts.depth, opts.skip_dir) do
+    log.time_it("fill_tree start scan:", tasks_name)
+    for path in scan_root.pathlib:fs_iterdir(false, opts.depth, opts.skip_dir) do
       self:add_task(function()
         local node = tree:get_node(path:tostring())
         if not node then
           local _parent = path:parent_assert():tostring()
-          node = locals.new_node(path, path:len() - cwd_len + root_depth)
+          node = locals.new_node(path, path:len() - scan_root_len + scan_root_depth)
           table.insert(nodes[_parent], node)
         end
         node.is_reveal_target = reveal_path and path == reveal_path or false
       end, tasks_name)
     end
     self:wait_all_tasks(tasks_name, false)
+    log.time_it("fill_tree end scan:", tasks_name)
     local keys = vim.tbl_keys(nodes)
     table.sort(keys, function(a, b)
       return a:len() < b:len()
     end)
+    local added_nodes = 0
     for _, key in ipairs(keys) do
       for _, node in ipairs(nodes[key]) do
         tree:add_node(node, key)
       end
+      added_nodes = added_nodes + #nodes[key]
+      local parent = tree:get_node(key)
+      if parent then
+        parent.loaded = true
+      end
     end
+    log.time_it("fill_tree added nodes:", added_nodes)
     if self.use_libuv_file_watcher then
       local node_table = tree.nodes.by_id --[[@as table<any, NeotreeSourceItem>]]
       for _, node in pairs(node_table) do
@@ -264,21 +283,36 @@ function Filetree:fill_tree(parent_id, depth, reveal_path)
   end)
 end
 
-function locals.skipf_reveal_parent(cwd_len, depth, reveal_path, fallback)
-  local reveal_string = reveal_path:absolute():tostring()
-  local new_depth = math.max(depth, reveal_path:len() - cwd_len)
+function locals.skipf_default(scan_root_len, depth, tree)
   return {
-    depth = new_depth,
+    depth = depth,
     skip_dir = function(dir)
-      if vim.startswith(reveal_string, dir:tostring()) then
+      if dir:len() - scan_root_len > depth - 1 then
+        -- needs to scan more than direct children
         return false
       end
-      return dir:len() - cwd_len >= depth or fallback(dir)
+      local dir_node = tree:get_node(dir:tostring())
+      return dir_node and dir_node.loaded
     end,
   }
 end
 
-function locals.skipf_scan_deep(cwd_len, depth, filtered_items_config, fallback)
+function locals.skipf_reveal_parent(scan_root_len, depth, reveal_path, fallback)
+  local reveal_string = reveal_path:absolute():tostring()
+  local new_depth = math.max(depth, reveal_path:len() - scan_root_len)
+  return {
+    depth = new_depth,
+    skip_dir = function(dir)
+      local dir_string = dir:tostring()
+      if reveal_string:len() < dir_string:len() and vim.startswith(reveal_string, dir_string) then
+        return false
+      end
+      return fallback(dir)
+    end,
+  }
+end
+
+function locals.skipf_scan_deep(scan_root_len, _, filtered_items_config, fallback)
   return {
     depth = nil,
     skip_dir = function(dir)
@@ -296,7 +330,7 @@ function locals.skipf_scan_deep(cwd_len, depth, filtered_items_config, fallback)
           return true
         end
       end
-      return dir:len() - cwd_len >= depth or fallback(dir)
+      return fallback(dir)
     end,
   }
 end
@@ -320,11 +354,9 @@ function Filetree:toggle_directory(_node, path_to_reveal, skip_redraw)
   end
   ---@type NuiTreeNode|NeotreeSourceItem
   local node = _node
-  log.time_it("valid node: ", node.id)
+  log.time_it("valid node:", node.id)
   self.explicitly_opened_directories = self.explicitly_opened_directories or {}
-  if node.loaded == false then
-    self:fill_tree(node:get_id(), 1, path_to_reveal)
-  end
+  self:fill_tree(node:get_id(), 1, path_to_reveal)
   if node:has_children() then
     local updated = false
     if node:is_expanded() then

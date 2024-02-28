@@ -4,7 +4,7 @@ description: A migration guideline to neo-tree v4 for developers and a TODO list
 authors: takuto
 categories:
 created: 2024-02-19T16:25:02+0900
-updated: 2024-02-26T14:22:38+0000
+updated: 2024-02-28T06:37:24+0000
 version: 1.1.1
 @end
 
@@ -121,14 +121,28 @@ version: 1.1.1
 *** Keybind Commands
 
     - (-) rewrite `filetree/commands`.
-    -- (x) add
-    --- (x) focus added file
-    -- (x) open
-    -- (x) toggle
-    -- (x) delete
-    --- (x) update tree
-    -- ( ) close_node
-    -- ( ) clipboard
+    -- (-) filesystem operations
+    --- (x) add
+    ---- (x) focus added file
+    --- (x) open
+    --- (x) delete
+    ---- (x) update tree
+    --- (x) move
+    --- (x) copy
+    --- ( ) open with window_picker
+    -- (x) clipboard operations
+    --- (x) clipboard
+    --- (x) paste_from_clipboard: {* Breaking Changes : *** `common.commands.paste_from_clipboard`}
+    -- ( ) search operations
+    -- ( ) git operations
+    --- ( ) prev/next git modified
+    -- (-) node operations
+    --- (x) toggle
+    --- ( ) toggle hidden
+    --- ( ) toggle gitignored
+    -- ( ) tree operations
+    --- ( ) set cwd
+    --- ( ) move up tree
 
 ** 🔳 Event Handlers
 
@@ -139,10 +153,10 @@ version: 1.1.1
 
 ** 🔳 File Watcher
    - (x) Detect and update tree on file change.
-   - (x) file watcher is registered more than once.
-   - ( ) Use debounce based on num of waiting files.
-   - ( ) Scan check if dir is already scanned.
-   -- (-) {#  Keybind Commands} disable detecting file addition on neotree keybind.
+   - (x) fix: file watcher is registered more than once.
+   - (_) Use debounce based on num of waiting files.
+   - (x) Scan check if dir is already scanned.
+   -- (_) {#  Keybind Commands} disable detecting file addition on neotree keybind.
 
 ** 🔳 Git Watcher
 
@@ -170,6 +184,14 @@ version: 1.1.1
    Call `state:free`.
 
 * Breaking Changes
+
+** Misc
+
+*** `common.commands.paste_from_clipboard`
+
+    (aka `cc.paste_from_clipboard`)
+    -- ( ) callback was given `dest_folder: NuiTreeNode, destination: string` and called for each new file.
+    -- (x) callback is given a list of destinations `dest_folder: NuiTreeNode, destinations: PathlibPath[]` and called only once.
 
 ** Manager
 
