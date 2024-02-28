@@ -240,4 +240,136 @@ M.delete_nodes = nio.wrap(
   { strict = false }
 )
 
+---Copy source to destination, but if destination exists or is nil, asks user for a different path.
+M.copy_node = nio.wrap(
+  ---@param source PathlibPath
+  ---@param _destination PathlibPath|nil
+  ---@param cwd PathlibPath|nil
+  ---@param callback function|nil
+  ---@return PathlibPath source
+  ---@return PathlibPath|nil destination
+  function(source, _destination, cwd, callback)
+    callback = callback or function(...) end
+    nio.run(function()
+      local msg = string.format("Copy %s to:", source:basename())
+      local dest = M.callback_on_new_path(_destination or source, cwd, msg)
+      if source == dest then
+        log.warn("Cannot copy a file/folder to itself.")
+        return callback(source, nil)
+      end
+      dest:parent_assert():mkdir(dest.const.o755, true)
+      local success = source:copy(dest)
+      if not success then
+        log.fmt_error("Could not copy the file(s) from %s to %s:", source, dest, source.error_msg)
+        return callback(source, nil)
+      end
+      return callback(source, dest)
+    end) ---@diagnostic disable-line
+  end,
+  4,
+  { strict = false }
+)
+
+---Rename all buffers that are related (itself or children) of `old_path`.
+---@param bufnr integer|nil # Checks this bufnr. If nil, checks all buffers.
+---@param old_path PathlibPath
+---@param new_path PathlibPath
+local function rename_buffer(bufnr, old_path, new_path)
+  if not bufnr then
+    nio.scheduler()
+    for _, buf in ipairs(vim.api.nvim_list_bufs()) do
+      nio.wait(nio.run(function()
+        rename_buffer(buf, old_path, new_path)
+      end))
+    end
+    return
+  end
+  if not vim.api.nvim_buf_is_loaded(bufnr) then
+    return false
+  end
+  local buf_name = vim.api.nvim_buf_get_name(bufnr)
+  local buf_path = old_path.new(buf_name)
+  if not buf_path:is_relative_to(old_path) then
+    return false
+  end
+  local save_to_new_path = vim.api.nvim_get_option_value("modified", { buf = bufnr })
+  if save_to_new_path then
+    local msg = old_path:tostring() .. " has been modified. Save under new name? (y/n) "
+    if inputs.confirm_async(msg) then
+      save_to_new_path = true
+    else
+      nio.scheduler()
+      vim.api.nvim_err_writeln(
+        "Skipping force save. You'll need to save it with `:w!`"
+          .. " when you are ready to force writing with the new name."
+      )
+    end
+  end
+  nio.scheduler()
+  vim.api.nvim_buf_set_name(bufnr, new_path:tostring())
+  if save_to_new_path then
+    vim.api.nvim_buf_call(bufnr, function()
+      vim.cmd.write({ bang = true })
+    end)
+  end
+end
+
+---Move source to destination, but if destination exists or is nil, asks user for a different path.
+M.move_node = nio.wrap(
+  ---@param source PathlibPath
+  ---@param _destination PathlibPath|nil
+  ---@param cwd PathlibPath|nil
+  ---@param callback function|nil
+  ---@return PathlibPath source
+  ---@return PathlibPath|nil destination
+  function(source, _destination, cwd, callback)
+    callback = callback or function(...) end
+    nio.run(function()
+      local msg = string.format("move %s to:", source:basename())
+      local dest = M.callback_on_new_path(_destination or source, cwd, msg)
+      if source == dest then
+        log.warn("Cannot move a file/folder to itself.")
+        return callback(source, nil)
+      end
+      dest:parent_assert():mkdir(dest.const.o755, true)
+      local success = source:move(dest)
+      if not success then
+        log.fmt_error("Could not move the file(s) from %s to %s:", source, dest, source.error_msg)
+        return callback(source, nil)
+      end
+      rename_buffer(nil, source, dest)
+      return callback(source, dest)
+    end) ---@diagnostic disable-line
+  end,
+  4,
+  { strict = false }
+)
+
+---Checks if `new_path` does not exist and run callback. If file already exists, asks user again for a different path.
+M.callback_on_new_path = nio.wrap(
+  ---@param new_path PathlibPath
+  ---@param cwd PathlibPath|nil
+  ---@param first_message string|nil # Message to popup to user. Shows `... already exists.` from the second time.
+  ---@param callback function|nil
+  ---@return PathlibPath unique_path
+  function(new_path, cwd, first_message, callback)
+    cwd = cwd or new_path:parent_assert()
+    nio.run(function()
+      local first_iteration = true
+      while new_path:exists() do
+        local name = new_path:relative_to(cwd, false)
+        local name_string = tostring(name or new_path:basename())
+        local message = first_iteration and first_message
+          or name_string .. " already exists. Please enter a new name: "
+        local input = inputs.input_async(message, name_string)
+        new_path = cwd / input
+        first_iteration = false
+      end
+      return callback and callback(new_path)
+    end) ---@diagnostic disable-line
+  end,
+  4,
+  { strict = false }
+)
+
 return M

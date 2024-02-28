@@ -13,28 +13,25 @@ local help = require("neo-tree.sources.common.help")
 local Preview = require("neo-tree.sources.common.preview")
 local async = require("plenary.async")
 local node_expander = require("neo-tree.sources.common.node_expander")
+local Path = require("pathlib")
+local nio = require("neo-tree.utils.nio_wrapper")
 
 ---Gets the node parent folder
----@param state table to look for nodes
----@return table? node
+---@param state NeotreeState to look for nodes
+---@return NuiTreeNode|nil node
 local function get_folder_node(state)
-  local tree = state.tree
-  local node = tree:get_node()
-  local last_id = node:get_id()
+  local node = state.tree:get_node()
+  local last_id = node and node:get_id()
 
   while node do
     local insert_as_local = state.config.insert_as
-    -- local insert_as_global = require("neo-tree").config.window.insert_as
-    local use_parent
-    if insert_as_local then
-      use_parent = insert_as_local == "sibling"
-    else
-      use_parent = insert_as_global == "sibling"
-    end
+    local insert_as_global = state.window.insert_as
+    local use_parent = insert_as_global == "sibling"
+    use_parent = insert_as_local and insert_as_local == "sibling"
 
     local is_open_dir = node.type == "directory" and (node:is_expanded() or node.empty_expanded)
     if use_parent and not is_open_dir then
-      return tree:get_node(node:get_parent_id())
+      return state.tree:get_node(node:get_parent_id())
     end
 
     if node.type == "directory" then
@@ -46,23 +43,24 @@ local function get_folder_node(state)
       return node
     else
       last_id = parent_id
-      node = tree:get_node(parent_id)
+      node = state.tree:get_node(parent_id)
     end
   end
 end
 
 ---The using_root_directory is used to decide what part of the filename to show
 -- the user when asking for a new filename to e.g. create, copy to or move to.
----@param state table The state of the source
----@return string The root path from which the relative source path should be taken
+---@param state NeotreeState # The state of the source
+---@return string # The root path from which the relative source path should be taken
 local function get_using_root_directory(state)
   -- default to showing only the basename of the path
-  local using_root_directory = get_folder_node(state):get_id()
+  local root_dir = get_folder_node(state)
+  local using_root_directory = root_dir and root_dir:get_id()
   local show_path = state.config.show_path
   if show_path == "absolute" then
     using_root_directory = ""
   elseif show_path == "relative" then
-    using_root_directory = state.path
+    using_root_directory = state.dir:tostring()
   elseif show_path ~= nil and show_path ~= "none" then
     log.warn(
       'A neo-tree mapping was setup with a config.show_path option with invalid value: "'
@@ -70,7 +68,7 @@ local function get_using_root_directory(state)
         .. '", falling back to its default: nil/"none"'
     )
   end
-  return using_root_directory
+  return tostring(using_root_directory)
 end
 
 ---A table to register sync and async functions.
@@ -79,10 +77,13 @@ end
 local M = setmetatable({}, {
   __index = function(tbl, key)
     if key == "call" then
-      tbl.call = function(cb, ...)
-        cb(...)
-        return ...
-      end
+      rawset(tbl, "call", function(cb, ...)
+        if cb then
+          cb(...)
+        else
+          return ...
+        end
+      end)
       return tbl.call
     end
     return nil
@@ -129,10 +130,13 @@ end
 ---@param callback function|nil # The callback to call when the command is done. Called with the parent node as the argument.
 ---@return PathlibPath[] create
 ---@return NuiTreeNode parent
-M.nowrap.add_directory = function(state, callback)
+M.wrap2.add_directory = function(state, callback)
   local node = get_folder_node(state)
   assert(node, "Failed to find current focused node.")
-  return fs.create_directory(node.pathlib, state.dir, callback) or {}, node
+  local add_cb = function(paths)
+    return M.call(callback, paths or {}, node)
+  end
+  return fs.create_directory(node.pathlib, state.dir, add_cb) or {}, node
 end
 
 ---Expand all nodes
@@ -140,6 +144,7 @@ end
 ---@param node table A node to expand
 ---@param prefetcher table an object with two methods `prefetch(state, node)` and `should_prefetch(node) => boolean`
 M.nowrap.expand_all_nodes = function(state, node, prefetcher)
+  error("DEPRECATED: use state:fill_tree instead.")
   log.debug("Expanding all nodes under " .. node:get_id())
   if prefetcher == nil then
     prefetcher = node_expander.default_prefetcher
@@ -235,6 +240,9 @@ M.nowrap.toggle_auto_expand_width = function(state)
   renderer.redraw(state)
 end
 
+---Toggle copy state of a node in `state.clipboard`.
+---@param state NeotreeState
+---@param node NuiTreeNode
 local copy_node_to_clipboard = function(state, node)
   state.clipboard = state.clipboard or {}
   local existing = state.clipboard[node.id]
@@ -247,28 +255,33 @@ local copy_node_to_clipboard = function(state, node)
 end
 
 ---Marks node as copied, so that it can be pasted somewhere else.
-M.nowrap.copy_to_clipboard = function(state, callback)
+---@param state NeotreeState
+---@param callback function|nil
+M.wrap2.copy_to_clipboard = function(state, callback)
   local node = state.tree:get_node()
-  if node.type == "message" then
+  if not node or node.type == "message" then
     return
   end
   copy_node_to_clipboard(state, node)
-  if callback then
-    callback()
-  end
+  return M.call(callback)
 end
 
-M.nowrap.copy_to_clipboard_visual = function(state, selected_nodes, callback)
+---Marks nodes as copied, so that it can be pasted somewhere else.
+---@param state NeotreeState
+---@param selected_nodes NuiTreeNode[]
+---@param callback function|nil
+M.wrap3.copy_to_clipboard_visual = function(state, selected_nodes, callback)
   for _, node in ipairs(selected_nodes) do
     if node.type ~= "message" then
       copy_node_to_clipboard(state, node)
     end
   end
-  if callback then
-    callback()
-  end
+  return M.call(callback)
 end
 
+---Toggle cut state of a node in `state.clipboard`.
+---@param state NeotreeState
+---@param node NuiTreeNode
 local cut_node_to_clipboard = function(state, node)
   state.clipboard = state.clipboard or {}
   local existing = state.clipboard[node.id]
@@ -281,23 +294,28 @@ local cut_node_to_clipboard = function(state, node)
 end
 
 ---Marks node as cut, so that it can be pasted (moved) somewhere else.
-M.nowrap.cut_to_clipboard = function(state, callback)
+---@param state NeotreeState
+---@param callback function|nil
+M.wrap2.cut_to_clipboard = function(state, callback)
   local node = state.tree:get_node()
-  cut_node_to_clipboard(state, node)
-  if callback then
-    callback()
+  if not node or node.type == "message" then
+    return
   end
+  cut_node_to_clipboard(state, node)
+  return M.call(callback)
 end
 
-M.nowrap.cut_to_clipboard_visual = function(state, selected_nodes, callback)
+---Marks nodes as cut, so that it can be pasted somewhere else.
+---@param state NeotreeState
+---@param selected_nodes NuiTreeNode[]
+---@param callback function|nil
+M.wrap3.cut_to_clipboard_visual = function(state, selected_nodes, callback)
   for _, node in ipairs(selected_nodes) do
     if node.type ~= "message" then
       cut_node_to_clipboard(state, node)
     end
   end
-  if callback then
-    callback()
-  end
+  return M.call(callback)
 end
 
 --------------------------------------------------------------------------------
@@ -570,101 +588,82 @@ M.nowrap.show_file_details = function(state)
 end
 
 ---Pastes all items from the clipboard to the current directory.
----@param state table The state of the source
----@param callback function The callback to call when the command is done. Called with the parent node as the argument.
+---@param state NeotreeState
+---@param callback function|nil
+---@return NuiTreeNode|nil folder # Node where the files were pasted to. Nil when failed.
+---@return PathlibPath[]|nil destinations # List of new paths.
 M.nowrap.paste_from_clipboard = function(state, callback)
-  if state.clipboard then
-    local folder = get_folder_node(state):get_id()
-    -- Convert to list so to make it easier to pop items from the stack.
-    local clipboard_list = {}
-    for _, item in pairs(state.clipboard) do
-      table.insert(clipboard_list, item)
+  if not state.clipboard then
+    return M.call(callback)
+  end
+  local folder_node = get_folder_node(state)
+  local folder_id = folder_node and folder_node:get_id()
+  if not folder_node or not folder_id then
+    log.error("Could not find focused directory.")
+    return M.call(callback)
+  end
+  ---@type PathlibPath
+  local folder = folder_node.pathlib
+  local paths = vim.tbl_keys(state.clipboard)
+  table.sort(paths, function(a, b)
+    -- sort shortest paths first to operate on parent nodes first.
+    return string.len(a) < string.len(b)
+  end)
+  local destinations = {} -- remember the last pasted file
+  for _, node_id in ipairs(paths) do
+    local item = state.clipboard[node_id]
+    state.clipboard[node_id] = nil
+    local node = state.tree:get_node(node_id)
+    local _dest
+    if not node then
+    elseif item.action == "copy" then
+      _, _dest = fs.copy_node(node.pathlib, folder / node.name)
+    elseif item.action == "cut" then
+      _, _dest = fs.move_node(node.pathlib, folder / node.name)
     end
-    state.clipboard = nil
-    local handle_next_paste, paste_complete
-
-    paste_complete = function(source, destination)
-      if callback then
-        local insert_as = require("neo-tree").config.window.insert_as
-        -- open the folder so the user can see the new files
-        local node = insert_as == "sibling" and state.tree:get_node() or state.tree:get_node(folder)
-        if not node then
-          log.warn("Could not find node for " .. folder)
-        end
-        callback(node, destination)
-      end
-      local next_item = table.remove(clipboard_list)
-      if next_item then
-        handle_next_paste(next_item)
-      end
-    end
-
-    handle_next_paste = function(item)
-      if item.action == "copy" then
-        fs_actions.copy_node(
-          item.node.path,
-          folder .. utils.path_separator .. item.node.name,
-          paste_complete
-        )
-      elseif item.action == "cut" then
-        fs_actions.move_node(
-          item.node.path,
-          folder .. utils.path_separator .. item.node.name,
-          paste_complete
-        )
-      end
-    end
-
-    local next_item = table.remove(clipboard_list)
-    if next_item then
-      handle_next_paste(next_item)
+    if _dest then
+      table.insert(destinations, _dest)
     end
   end
+  state.clipboard = nil
+  return M.call(callback, folder_node, destinations)
 end
 
 ---Copies a node to a new location, using typed input.
----@param state table The state of the source
----@param callback function The callback to call when the command is done. Called with the parent node as the argument.
-M.nowrap.copy = function(state, callback)
-  local node = state.tree:get_node()
-  if node.type == "message" then
-    return
+---@param state NeotreeState # The state of the source
+---@param callback function|nil
+---@return PathlibPath|nil source # nil if source not found (operated on `node.type == "message"` etc).
+---@return PathlibPath|nil destination # nil if copy failed.
+M.wrap2.copy = function(state, callback)
+  local tree = state.tree
+  local node = tree and tree:get_node()
+  if not node then
+    return nil
   end
-  local using_root_directory = get_using_root_directory(state)
-  fs_actions.copy_node(node.path, nil, callback, using_root_directory)
+  if node.type == "message" then
+    return nil
+  end
+  local using_root_directory = Path(get_using_root_directory(state))
+  return fs.copy_node(node.pathlib, nil, using_root_directory, callback)
 end
 
 ---Moves a node to a new location, using typed input.
----@param state table The state of the source
----@param callback function The callback to call when the command is done. Called with the parent node as the argument.
-M.nowrap.move = function(state, callback)
-  local node = state.tree:get_node()
-  if node.type == "message" then
-    return
+---@param state NeotreeState # The state of the source
+---@param callback function|nil
+---@return PathlibPath|nil source # nil if source not found (operated on `node.type == "message"` etc).
+---@return PathlibPath|nil destination # nil if move failed.
+M.wrap2.move = function(state, callback)
+  local tree = state.tree
+  local node = tree and tree:get_node()
+  if not node then
+    return nil
   end
-  local using_root_directory = get_using_root_directory(state)
-  fs_actions.move_node(node.path, nil, callback, using_root_directory)
+  if node.type == "message" then
+    return nil
+  end
+  local using_root_directory = Path(get_using_root_directory(state))
+  return fs.move_node(node.pathlib, nil, using_root_directory, callback)
 end
-
--- ---Add a new file or dir at the current node
--- ---@param state table The state of the source
--- ---@param callback function|nil # The callback to call when the command is done. Called with the parent node as the argument.
--- ---@return PathlibPath[] create
--- ---@return NuiTreeNode parent
--- M.async2.add = function(state, callback)
---   vim.print(string.format([[add]]))
---   local node = get_folder_node(state)
---   assert(node, "Failed to find current focused node.")
---   vim.print(string.format([[node:get_id(): %s]], vim.inspect(node:get_id())))
---   ---@type PathlibPath[]
---   local add_result = fs.create_node(node.pathlib, state.dir, false) or {}
---   for _, dest in ipairs(add_result) do
---     state:fill_tree(node:get_id(), 0, dest)
---     state:focus_node(dest:tostring())
---   end
---   renderer.redraw(state)
---   return M.call(callback, add_result, node)
--- end
 
 ---Delete items from tree. Only compatible with file system trees.
 ---@param state NeotreeState
@@ -874,13 +873,23 @@ M.nowrap.open_tab_drop = function(state, toggle_directory)
   open_with_cmd(state, "tab drop", toggle_directory)
 end
 
-M.nowrap.rename = function(state, callback)
+---Rename a node to a new location, using typed input.
+---@param state NeotreeState # The state of the source
+---@param callback function|nil
+---@return PathlibPath|nil source # nil if source not found (operated on `node.type == "message"` etc).
+---@return PathlibPath|nil destination # nil if move failed.
+M.wrap2.rename = function(state, callback)
+  error("DEPRECATED: use `move` instead.")
   local tree = state.tree
-  local node = tree:get_node()
-  if node.type == "message" then
-    return
+  local node = tree and tree:get_node()
+  if not node then
+    return nil
   end
-  fs_actions.rename_node(node.path, callback)
+  if node.type == "message" then
+    return nil
+  end
+  local using_root_directory = Path(get_using_root_directory(state))
+  return fs.move_node(node.pathlib, nil, using_root_directory, callback)
 end
 
 ---Marks potential windows with letters and will open the give node in the picked window.

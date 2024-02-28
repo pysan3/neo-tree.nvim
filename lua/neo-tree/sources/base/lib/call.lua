@@ -11,6 +11,9 @@ error("Cannot require a meta file")
 ---@class NeotreeCommonCommands
 local M = {}
 
+---@param cb function|nil
+M.call = function(cb) end
+
 ---@generic A
 ---@param cb function|nil
 ---@param a A
