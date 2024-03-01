@@ -170,14 +170,4 @@ function M.sleep(ms)
   end
 end
 
----Log elapsed time with its message.
----@param log string
----@param start number
-function M.elapsed(log, start)
-  vim.print(
-    string.format([[%.3f nio %s : ]], os.clock() - start, M.current_task() and "true " or "false")
-      .. log
-  )
-end
-
 return M

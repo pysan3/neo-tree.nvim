@@ -299,8 +299,6 @@ M.git_status = function(config, node, state)
   --   return {}
   -- end
   local git_state = node.pathlib.git_state
-  vim.print(string.format([[git_state.is_ready.is_set(): %s]], git_state.is_ready.is_set()))
-  vim.print(string.format([[git_state.state: %s]], vim.inspect(git_state.state)))
   if not git_state or not git_state.is_ready then
     if node.filtered_by and node.filtered_by.gitignored then
       git_status = "!!"
@@ -324,11 +322,6 @@ M.git_status = function(config, node, state)
   --   status_symbol = symbols.unstaged
   --   status_highlt = highlights.GIT_UNSTAGED
   -- end
-  vim.print(string.format([[node.pathlib: %s]], node.pathlib))
-  vim.print(string.format([[change_symbol: %s]], vim.inspect(change_symbol)))
-  vim.print(string.format([[change_highlt: %s]], vim.inspect(change_highlt)))
-  vim.print(string.format([[status_symbol: %s]], vim.inspect(status_symbol)))
-  vim.print(string.format([[status_highlt: %s]], vim.inspect(status_highlt)))
   if change_symbol or status_symbol then
     local components = {}
     if type(change_symbol) == "string" and #change_symbol > 0 then
@@ -343,7 +336,6 @@ M.git_status = function(config, node, state)
         highlight = status_highlt,
       })
     end
-    vim.print(string.format([[components: %s]], vim.inspect(components)))
     return components
   else
     return {

@@ -704,7 +704,6 @@ function Manager:on_buf_win_enter()
     log.time_it("window is neo-tree", bufnr, posid, window and window.bufnr)
     return
   end
-  vim.print(string.format([[vim.bo.filetype: %s]], vim.inspect(vim.bo.filetype)))
   if vim.bo.filetype == "neo-tree" or vim.bo.filetype == "neo-tree-popup" then
     log.time_it("new neo-tree window", bufnr, window and window.bufnr)
     return
