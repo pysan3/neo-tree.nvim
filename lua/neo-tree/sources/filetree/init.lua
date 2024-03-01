@@ -53,7 +53,7 @@ function Filetree.new(config, id, dir)
     return
   end
   self:prepare_tree()
-  self.tree:add_node(locals.new_node(self.dir, 0))
+  self.tree:add_node(locals.new_node(self.dir, 1))
   self:add_task(function()
     self:fill_tree(nil, 1, nil)
     if self.enable_git_status then
@@ -251,6 +251,7 @@ end
 ---@param depth integer|nil # Depth to dig into. If nil, goes all the way.
 ---@param reveal_path PathlibPath|nil # Ignores depth limit and digs until this path.
 function Filetree:fill_tree(parent_id, depth, reveal_path)
+  -- TODO: Split this function as it is too long.
   self:modify_tree(function(tree)
     local scan_root = tree:get_node(parent_id or self.dir:tostring())
     if not scan_root then
@@ -286,7 +287,7 @@ function Filetree:fill_tree(parent_id, depth, reveal_path)
         local node = tree:get_node(path:tostring())
         if not node then
           local _parent = path:parent_assert():tostring()
-          node = locals.new_node(path, path:len() - scan_root_len + scan_root_depth)
+          node = locals.new_node(path, path:len() - scan_root_len + scan_root_depth + 1) -- level starts from 1
           table.insert(nodes[_parent], node)
         end
         node.is_reveal_target = reveal_path and path == reveal_path or false
@@ -312,6 +313,14 @@ function Filetree:fill_tree(parent_id, depth, reveal_path)
         --     return self.sort_function(tree, parent:get_id(), a, b)
         --   end)
         -- end
+        if parent:has_children() then
+          local child_ids = parent:get_child_ids()
+          local child_len = #child_ids
+          for index, child_id in ipairs(child_ids) do
+            local _n = tree:get_node(child_id)
+            _n.is_last_child = index == child_len
+          end
+        end
         parent.loaded = true
       end
     end
