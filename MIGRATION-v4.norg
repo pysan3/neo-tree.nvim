@@ -4,7 +4,7 @@ description: A migration guideline to neo-tree v4 for developers and a TODO list
 authors: takuto
 categories:
 created: 2024-02-19T16:25:02+0900
-updated: 2024-02-29T06:49:51+0000
+updated: 2024-03-01T11:10:43+0000
 version: 1.1.1
 @end
 
@@ -63,7 +63,7 @@ version: 1.1.1
    require("noice.message.manager")._history = {}
    @end
 
-* Roadmap
+* Road Map
 
   Here are the list of features that I haven't implemented / tested yet.
   I'll mostly work from top to bottom, but I may skip one or another based on my interests haha.
@@ -99,11 +99,11 @@ version: 1.1.1
 
    - (x) when curpos is saved
    -- (x) close
-   --- (x) no need to do this anymore? bufdelete should handle this
+   --- (x) no need to do this anymore? `bufdelete` should handle this
    -- (x) before render_tree
    -- (x) follow_internal
    --- (x) instead use focus_node
-   -- (x) bufdelete
+   -- (x) `bufdelete`
    --- (x) use BufWinLeave instead
    - (x) when restored
    -- (x) after render_tree
@@ -114,7 +114,7 @@ version: 1.1.1
 
    Current code is very hacky.
    - ( ) Revisit this and implement it a bit cleaner.
-   - ( ) Backport {https://github.com/nvim-neo-tree/neo-tree.nvim/pull/1355}
+   - ( ) Back port {https://github.com/nvim-neo-tree/neo-tree.nvim/pull/1355}
 
    Implement some kind of session save / restore mechanism
    that is able to survive across different nvim sessions.
@@ -190,8 +190,8 @@ version: 1.1.1
 
    Does not work when left -> right -> top -> right.
    Do not have any way to test it with code. (Requires human intervention).
-   Maybe create aucmd with AuG ID?
-   create_aug is not updated.
+   Maybe create autocmd with AuG ID?
+   `create_aug` is not updated.
 
    Solved!!!
    - {https://github.com/MunifTanjim/nui.nvim/pull/332}
@@ -213,7 +213,7 @@ version: 1.1.1
 
 ** Manager
 
-   The biggest rewrite happends at /manager/.
+   The biggest rewrite happens at /manager/.
 
    Previously it was `"neo-tree.sources.manager"` which I've moved it to `"neo-tree.manager.init"`.
    The old manager was to initialize a state and to fetch the current active state in a very hacky code.
@@ -251,7 +251,7 @@ version: 1.1.1
     source is allowed to request an expansion of the width.
 
     After state has finished `tree:render()`, it does not need to check whether a window is valid
-    or `aquire_window` or anything like that but just needs to call `manager:done()`.
+    or `acquire_window` or anything like that but just needs to call `manager:done()`.
 
     Therefore, `state` will no longer have `tabid`, `winid`, `bufnr` attributes.
     `state.current_position` is kept (and updated correctly) for backwards compatibility,
@@ -276,7 +276,7 @@ version: 1.1.1
   the base (parent) function cannot know when the callback has ended,
   nor get a return value from the function call.
 
-  This is where {https://github.com/nvim-neotest/nvim-nio}[nvim-nio] comes handly,
+  This is where {https://github.com/nvim-neotest/nvim-nio}[nvim-nio] comes handy,
   but this is a neat wrapper around lua coroutines, so let's learn from the ground up.
 
 *** Lua Async Await Article
@@ -349,7 +349,7 @@ version: 1.1.1
 
 *** Create an Async Function
 
-    {https://github.com/nvim-neotest/nvim-nio}[nvim-nio] provodes building blocks to implement this coroutine system with
+    {https://github.com/nvim-neotest/nvim-nio}[nvim-nio] provides building blocks to implement this coroutine system with
     {https://github.com/nvim-neotest/nvim-nio#third-party-integration}[`nio.wrap`].
 
     When the last argument is the callback, it is as simple as this...
