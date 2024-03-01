@@ -179,8 +179,12 @@ function Filetree:navigate(dir, path_to_reveal, window_width, manager, failed_ar
       self:fill_tree(nil, 0, path_to_reveal)
     end)
   end
+  log.time_it("start filetree:navigate")
   self:prepare_rendar_args(window_width, not window_width.strict)
+  self:wait_all_tasks("fill_git_state")
+  log.time_it("fill_git_state finished")
   self:wait_all_tasks()
+  log.time_it("all_tasks finished")
   -- TODO: local group_with = self.config.group_empty_dirs and Path.sep_str or nil
   -- local request_window_width = self:show_nodes(nil, self.tree, nil, group_with)
   self:show_nodes(nil, self.tree, nil, nil)

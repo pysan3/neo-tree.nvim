@@ -340,7 +340,8 @@ function Source:prepare_node(item)
   local should_pad = false
   for _, component in ipairs(renderer) do
     if component.enabled ~= false then
-      local datas, wanted_width = ui_rndr.render_component(component, item, self, self.render_args)
+      local datas, wanted_width =
+        ui_rndr.render_component(component, item, self, { remaining_cols = remaining_cols })
       if datas then
         local actual_width = 0
         for _, data in ipairs(datas) do

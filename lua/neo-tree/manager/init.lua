@@ -217,7 +217,7 @@ function Manager:open_state(state, position, dir, reveal_file)
   }
   nio.run(function()
     local _msg = "window created (id: %s, %s), start '%s':navigate to reveal '%s'."
-    log.time_it(string.format(_msg, window.winid, window_width, state.id, reveal_file))
+    log.time_it(string.format(_msg, window.winid, vim.inspect(window_width), state.id, reveal_file))
     return state:navigate(dir or state.dir, reveal_file, window_width, self, {})
   end)
 end
