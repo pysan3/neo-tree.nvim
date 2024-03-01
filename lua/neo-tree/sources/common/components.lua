@@ -158,7 +158,7 @@ M.diagnostics = function(config, node, state)
 end
 
 ---@param config NeotreeComponent.git_status
-M.git_status = function(config, node, state)
+M.git_status2 = function(config, node, state)
   local git_status_lookup = state.git_status_lookup
   if config.hide_when_expanded and node.type == "directory" and node:is_expanded() then
     return {}
@@ -252,6 +252,102 @@ M.git_status = function(config, node, state)
   else
     return {
       text = "[" .. git_status .. "]",
+      highlight = config.highlight or change_highlt,
+    }
+  end
+end
+
+local pathlib_git_status = require("pathlib.const").git_status
+local git_symbols_map = {
+  [pathlib_git_status.UNMODIFIED] = "unmodified",
+  [pathlib_git_status.MODIFIED] = "modified",
+  [pathlib_git_status.FILE_TYPE_CHANGED] = "file_type_changed",
+  [pathlib_git_status.ADDED] = "added",
+  [pathlib_git_status.DELETED] = "deleted",
+  [pathlib_git_status.RENAMED] = "renamed",
+  [pathlib_git_status.COPIED] = "copied",
+  [pathlib_git_status.UPDATED_BUT_UNMERGED] = "updated_but_unmerged",
+  [pathlib_git_status.UNTRACKED] = "untracked",
+  [pathlib_git_status.UNSTAGED] = "unstaged",
+  [pathlib_git_status.STAGED] = "staged",
+  [pathlib_git_status.CONFLICT] = "conflict",
+  [pathlib_git_status.IGNORED] = "ignored",
+}
+local git_highlights_map = {
+  [pathlib_git_status.UNMODIFIED] = highlights.GIT_UNMODIFIED,
+  [pathlib_git_status.MODIFIED] = highlights.GIT_MODIFIED,
+  [pathlib_git_status.FILE_TYPE_CHANGED] = highlights.GIT_FILE_TYPE_CHANGED,
+  [pathlib_git_status.ADDED] = highlights.GIT_ADDED,
+  [pathlib_git_status.DELETED] = highlights.GIT_DELETED,
+  [pathlib_git_status.RENAMED] = highlights.GIT_RENAMED,
+  [pathlib_git_status.COPIED] = highlights.GIT_COPIED,
+  [pathlib_git_status.UPDATED_BUT_UNMERGED] = highlights.GIT_UPDATED_BUT_UNMERGED,
+  [pathlib_git_status.UNTRACKED] = highlights.GIT_UNTRACKED,
+  [pathlib_git_status.UNSTAGED] = highlights.GIT_UNSTAGED,
+  [pathlib_git_status.STAGED] = highlights.GIT_STAGED,
+  [pathlib_git_status.CONFLICT] = highlights.GIT_CONFLICT,
+  [pathlib_git_status.IGNORED] = highlights.GIT_IGNORED,
+}
+
+---@param config NeotreeComponent.git_status
+M.git_status = function(config, node, state)
+  -- local git_status_lookup = state.git_status_lookup
+  if config.hide_when_expanded and node.type == "directory" and node:is_expanded() then
+    return {}
+  end
+  -- if not git_status_lookup then
+  --   return {}
+  -- end
+  local git_state = node.pathlib.git_state
+  vim.print(string.format([[git_state.is_ready.is_set(): %s]], git_state.is_ready.is_set()))
+  vim.print(string.format([[git_state.state: %s]], vim.inspect(git_state.state)))
+  if not git_state or not git_state.is_ready then
+    if node.filtered_by and node.filtered_by.gitignored then
+      git_status = "!!"
+    else
+      return {}
+    end
+  end
+  if not git_state.is_ready.is_set() then
+    return {}
+  end
+  local git_status = git_state.state or {}
+  local symbols = config.symbols or {}
+  local change_symbol = symbols[git_symbols_map[git_status.change or ""] or ""]
+  local change_highlt = git_highlights_map[git_status.change or ""]
+  local status_symbol = symbols[git_symbols_map[git_status.status or ""] or ""]
+  local status_highlt = git_highlights_map[git_status.status or ""]
+  -- if node.type == "directory" and git_status:len() == 1 then
+  --   status_symbol = nil
+  -- end
+  -- if git_status:sub(1, 1) == " " then
+  --   status_symbol = symbols.unstaged
+  --   status_highlt = highlights.GIT_UNSTAGED
+  -- end
+  vim.print(string.format([[node.pathlib: %s]], node.pathlib))
+  vim.print(string.format([[change_symbol: %s]], vim.inspect(change_symbol)))
+  vim.print(string.format([[change_highlt: %s]], vim.inspect(change_highlt)))
+  vim.print(string.format([[status_symbol: %s]], vim.inspect(status_symbol)))
+  vim.print(string.format([[status_highlt: %s]], vim.inspect(status_highlt)))
+  if change_symbol or status_symbol then
+    local components = {}
+    if type(change_symbol) == "string" and #change_symbol > 0 then
+      table.insert(components, {
+        text = make_two_char(change_symbol),
+        highlight = change_highlt,
+      })
+    end
+    if type(status_symbol) == "string" and #status_symbol > 0 then
+      table.insert(components, {
+        text = make_two_char(status_symbol),
+        highlight = status_highlt,
+      })
+    end
+    vim.print(string.format([[components: %s]], vim.inspect(components)))
+    return components
+  else
+    return {
+      text = "[" .. (git_status.change or pathlib_git_status.UNMODIFIED) .. "]",
       highlight = config.highlight or change_highlt,
     }
   end

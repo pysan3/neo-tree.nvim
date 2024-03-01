@@ -69,7 +69,7 @@ end
 ---when index == 0, does nothing (returns nil).
 function Array:peek(index)
   if index > 0 then
-    return self.__data[self.left + index]
+    return self.__data[self.left + index - 1]
   elseif index < 0 then
     return self.__data[self.right + index + 1]
   end
@@ -92,9 +92,15 @@ function Array:extend(...)
   end
 end
 
+-- \@generic is not clever enough, so we need to create new type names for each content type
+-- to have type annotations work correctly.
+
 ---@alias NeotreeArray.integer NeotreeArray<integer>|NeotreeArray.push<integer>|NeotreeArray.pop<integer>|NeotreeArray.add<integer>|NeotreeArray.extra<integer>
+---@alias NeotreeArray.string NeotreeArray<string>|NeotreeArray.push<string>|NeotreeArray.pop<string>|NeotreeArray.add<string>|NeotreeArray.extra<string>
 
 return {
   ---@type NeotreeArray.integer|fun(...: integer): NeotreeArray.integer
   integer = Array,
+  ---@type NeotreeArray.string|fun(...: string): NeotreeArray.string
+  string = Array,
 }

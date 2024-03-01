@@ -75,7 +75,29 @@ M.input = function(message, default_value, callback, options, completion)
   end
 end
 
+---Async function to prompt using `vim.ui.input` or `NuiInput` to user.
+M.input_async = nio.wrap(
+  ---@param message string
+  ---@param default_value string
+  ---@param options any
+  ---@param completion any
+  ---@param callback function|nil
+  ---@return string
+  function(message, default_value, options, completion, callback)
+    vim.schedule(function()
+      M.input(message, default_value, callback, options, completion)
+    end) ---@diagnostic disable-line
+  end,
+  5,
+  {}
+)
+
+---Prompt a `vim.fn.confirm` to select between yes or no.
+---@param message string
+---@param callback function|nil
+---@return boolean
 M.confirm = function(message, callback)
+  callback = callback or function(_) end
   if should_use_popup_input() then
     local popup_options = popups.popup_options(message, 10)
 
@@ -93,7 +115,10 @@ M.confirm = function(message, callback)
     M.show_input(input)
   else
     callback(vim.fn.confirm(message, "&Yes\n&No") == 1)
-  end
+  end ---@diagnostic disable-line
 end
+
+---Async function to prompt a `vim.fn.confirm` to select between yes or no.
+M.confirm_async = nio.wrap(M.confirm, 2, {})
 
 return M

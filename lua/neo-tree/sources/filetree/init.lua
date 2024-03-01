@@ -56,9 +56,9 @@ function Filetree.new(config, id, dir)
   self.tree:add_node(locals.new_node(self.dir, 0))
   self:add_task(function()
     self:fill_tree(nil, 1, nil)
-    -- if self.enable_git_status then
-    --   self:fill_git_state(false)
-    -- end
+    if self.enable_git_status then
+      self:fill_git_state(nil, 1, true)
+    end
   end)
   self.filtered_items = locals.purify_filtered_items(config.filtered_items or {})
 
@@ -203,14 +203,46 @@ end
 --          │                     Filesystem Scan                     │
 --          ╰─────────────────────────────────────────────────────────╯
 
----Update path.git_status for all known paths.
+---Update path.git_status for all known paths under `parent_id` lazily.
 ---@async
-function Filetree:fill_git_state()
-  local paths = {}
-  for _, node in pairs(self.tree.nodes.by_id) do
-    table.insert(paths, node.pathlib)
+---@param parent_id string|nil # If nil, runs against all root nodes (each root node is processed separately).
+---@param depth integer|nil # 1 to scan a single folder without digging into grandchildren. Nil will go all the way.
+---@param wait boolean|nil # If true, send all paths at once and wait for all to finish. If falsy, add update request to queue.
+function Filetree:fill_git_state(parent_id, depth, wait)
+  if parent_id == nil then
+    local roots = self.tree:get_nodes()
+    if roots then
+      for _, root in ipairs(roots) do
+        self:fill_git_state(root:get_id(), depth, wait)
+      end
+    end
+    return
   end
-  pathlib_git.fill_git_state(paths)
+  -- Accumulate all node.pathlib under `parent_id` with BFS.
+  local paths, queue = {}, require("neo-tree.utils.array").string()
+  queue:pushright(parent_id)
+  local root = self.tree:get_node(queue:peek(1))
+  local root_depth = root and root:get_depth()
+  while queue:len() > 0 do
+    local node = self.tree:get_node(queue:popleft())
+    if node then
+      table.insert(paths, node.pathlib)
+      if not depth or (node:get_depth() - root_depth < depth) then
+        queue:extend(unpack(node:get_child_ids()))
+      end
+    end
+  end
+  log.time_it("fill_git_state: #paths:", #paths)
+  if wait then
+    pathlib_git.fill_git_state(paths)
+  else
+    for _, path in ipairs(paths) do
+      pathlib_git.request_git_status_update(path)
+      self:add_task(function()
+        path.git_status.is_set.wait()
+      end, "fill_git_state")
+    end
+  end
 end
 
 ---Fill tree until depth.
@@ -224,6 +256,7 @@ function Filetree:fill_tree(parent_id, depth, reveal_path)
     if not scan_root then
       return
     end
+    parent_id = scan_root:get_id()
     local scan_root_depth = scan_root:get_depth() - 1 -- we want parent_node to be 0
     -- Scan root's absolute path length. Compared against scanned items to calculate depth.
     local scan_root_len = self.dir:len() + scan_root_depth
@@ -232,18 +265,17 @@ function Filetree:fill_tree(parent_id, depth, reveal_path)
       log.time_it("skip fill_tree: reveal_path found")
       return -- reveal target already exists.
     end
-    local opts = locals.skipf_default(scan_root_len, depth, tree)
+    local opts = locals.skipfun_default(scan_root_len, depth, tree)
     if opts.depth and reveal_path then
-      opts = locals.skipf_reveal_parent(scan_root_len, opts.depth, reveal_path, opts.skip_dir)
+      opts = locals.skipfun_reveal_parent(scan_root_len, opts.depth, reveal_path, opts.skip_dir)
     end
     if self.config.scan_mode == "deep" then
-      opts =
-        locals.skipf_scan_deep(scan_root_len, opts.depth, self.config.filtered_items, opts.skip_dir)
+      opts = locals.skipfun_scan_deep(self.config.filtered_items, opts.skip_dir)
     end
     if opts.skip_dir(scan_root.pathlib) then
       local msg = "skip fill_tree: skip scan_root (root: %s, depth: %s, reveal: %s, loaded: %s)"
       log.time_it(string.format(msg, scan_root:get_id(), opts.depth, reveal_path, scan_root.loaded))
-      return -- scan_root is already returns opts.skip_dir(scan_root) == true.
+      return -- scan_root is already opts.skip_dir(scan_root) == true.
     end
     ---@type table<string, NuiTree.Node[]> # { parent_id: [nodes to be added] }
     local nodes = vim.defaulttable()
@@ -274,10 +306,20 @@ function Filetree:fill_tree(parent_id, depth, reveal_path)
       added_nodes = added_nodes + #nodes[key]
       local parent = tree:get_node(key)
       if parent then
+        -- TODO: Implement a method to sort children here. No need to deep-sort any more.
+        -- if self.sort_function then
+        --   table.sort(parent._child_ids, function(a, b)
+        --     return self.sort_function(tree, parent:get_id(), a, b)
+        --   end)
+        -- end
         parent.loaded = true
       end
     end
     log.time_it("fill_tree added nodes:", added_nodes)
+    if self.enable_git_status then
+      self:fill_git_state(parent_id, opts.depth, true)
+      log.time_it("fill_tree request git_state:", added_nodes)
+    end
     if self.use_libuv_file_watcher then
       local node_table = tree.nodes.by_id --[[@as table<any, NeotreeSourceItem>]]
       for _, node in pairs(node_table) do
@@ -287,7 +329,7 @@ function Filetree:fill_tree(parent_id, depth, reveal_path)
   end)
 end
 
-function locals.skipf_default(scan_root_len, depth, tree)
+function locals.skipfun_default(scan_root_len, depth, tree)
   return {
     depth = depth,
     skip_dir = function(dir)
@@ -301,7 +343,7 @@ function locals.skipf_default(scan_root_len, depth, tree)
   }
 end
 
-function locals.skipf_reveal_parent(scan_root_len, depth, reveal_path, fallback)
+function locals.skipfun_reveal_parent(scan_root_len, depth, reveal_path, fallback)
   local reveal_string = reveal_path:absolute():tostring()
   local new_depth = math.max(depth, reveal_path:len() - scan_root_len)
   return {
@@ -316,7 +358,7 @@ function locals.skipf_reveal_parent(scan_root_len, depth, reveal_path, fallback)
   }
 end
 
-function locals.skipf_scan_deep(scan_root_len, _, filtered_items_config, fallback)
+function locals.skipfun_scan_deep(filtered_items_config, fallback)
   return {
     depth = nil,
     skip_dir = function(dir)
