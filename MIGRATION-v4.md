@@ -18,325 +18,84 @@ With this hack and something like tmux, run nvim in one pane as usual to get goo
 return {
   "nvim-neo-tree/neo-tree.nvim",
   dir = vim.env.NVIM_NEOTREE_DEV and "/path/to/neo-tree.nvim" or nil, -- Add this line and point to the cloned repo.
+  version = false,
+  dependencies = {
+    { "MunifTanjim/nui.nvim" },
+    { "3rd/image.nvim" },
+    { "pysan3/pathlib.nvim" },
+    { "nvim-neotest/nvim-nio" },
+    { "nvim-tree/nvim-web-devicons" },
+    { "miversen33/netman.nvim" },
+  },
+  opts = {
+    -- ...
+  }
 }
 ```
 
 Rest of your config should not have any breaking changes, except that I haven't implemented the complete feature set yet, so some options are just ignored now.
 
-## Magic Script to Reload Neotree
-
-During plugin development, when you change some code, you'd have to close nvim and then reopen to get the new changes applied. But that's not how we (programmers) work.
-
-Put this in a random lua file (`reload.lua`) and each time you `:so reload.lua`, you'll get the new code applied without closing neovim. Don't forget to use `vim.startswith` cuz we need to also clear required files like `"neo-tree.ui.renderer"`.
-
-``` lua
-for key, _ in pairs(package.loaded) do
-  if vim.startswith(key, "neo-tree") then
-    package.loaded[key] = nil
-  -- elseif vim.startswith(key, "nio") then
-  --   package.loaded[key] = nil
-  -- elseif vim.startswith(key, "nui") then
-  --   package.loaded[key] = nil
-  -- elseif vim.startswith(key, "pathlib") then
-  --   package.loaded[key] = nil
-  end
-end
-local suc, mod = pcall(require, "neo-tree")
-assert(suc and mod)
-```
-
-BTW if you use noice and `:NoiceHistory` becomes too long, run the following code to flush the history. More info: <https://github.com/folke/noice.nvim/issues/731>.
-
-``` lua
-require("noice.message.manager")._history = {}
-```
-
-# Roadmap
+# Road Map
 
 Here are the list of features that I haven't implemented / tested yet. I'll mostly work from top to bottom, but I may skip one or another based on my interests haha.
 
-## ⬜ Neotree float
+## 🔳 Command Parser Autoload
+
+Make auto completion possible with `:Neotree` command. This one is pretty difficult as results must be returned before lazy loading.
+
+## 🔳 Neotree float
 
 I just haven't looked into the nui options.
 
-## ⬜ Highlights
+- [ ] Implement `wm.create_win`.
+- [ ] Set window color groups here.
+
+## ✅ Highlights
 
 Least priority for me sadly. I'm pretty sure old code will just work as is.
 
-## ⬜ Steal Prevention
+- [x] existing code worked as-is!!
+
+## ✅ Steal Prevention
 
 This is my next big thing to tackle.
 
-- [ ] autocmd for each manager.
-- [ ] send current buffer to `before_jump_info`.
+- [x] send current buffer to previous **non** neo-tree window.
+  - [x] autocmd for each manager.
   - [ ] update jump info.
+  - [x] remember previous window on WinLeave
 
-## ⬜ Cursor Position Save
+## ✅ Cursor Position Save
 
 - [x] when curpos is saved
   - [x] close
-    - [x] no need to do this anymore? bufdelete should handle this
+    - [x] no need to do this anymore? `bufdelete` should handle this
   - [x] before render\_tree
   - [x] follow\_internal
     - [x] instead use focus\_node
-  - [x] bufdelete
+  - [x] `bufdelete`
     - [x] use BufWinLeave instead
 - [x] when restored
   - [x] after render\_tree
 
+## 🔳 More Position Work
+
+Pre-alpha.
+
 Current code is very hacky.
 
 - [ ] Revisit this and implement it a bit cleaner.
-- [ ] Backport <https://github.com/nvim-neo-tree/neo-tree.nvim/pull/1355>
+- [ ] Back port <https://github.com/nvim-neo-tree/neo-tree.nvim/pull/1355>
+
+Implement some kind of session save / restore mechanism that is able to survive across different nvim sessions.
+
+- [ ] <https://github.com/nvim-neo-tree/neo-tree.nvim/pull/1366#issuecomment-1968943373>
 
 ## ✅ Keybinds
 
-- [ ] Make the code cleaner.
+- [x] Make the code cleaner.
 - [x] assign mappings to bufnr in each source. [./lua/neo-tree/ui/renderer.lua](./lua/neo-tree/ui/renderer.lua) \> `set_buffer_mappings`
-
-``` lua
-keymap.set(state.bufnr, "n", cmd, resolved_mappings[cmd].handler, map_options)
-if type(vfunc) == "function" then
-  keymap.set(state.bufnr, "v", cmd, function()
-    vim.api.nvim_feedkeys(ESC_KEY, "i", true)
-    vim.schedule(function()
-      local selected_nodes = get_selected_nodes(state)
-      if utils.truthy(selected_nodes) then
-        state.config = config
-        vfunc(state, selected_nodes)
-      end
-    end)
-  end, map_options)
-end
-```
 
 ### Keybind Commands
 
-- [ ] rewrite `filetree/commands`.
-  - [ ] add
-  - [x] open
-  - [x] toggle
-  - [ ] delete
-  - [ ] clipboard
-
-## ⬜ Event Handlers
-
-None of them are correctly triggered, and the API might change in the future.
-
-- [ ] follow current file
-- [ ] change cwd
-
-## ⬜ File Watcher
-
-- [x] Detect and update tree on file change.
-- [ ] file watcher is registered more than once.
-- [ ] Use debounce based on num of waiting files.
-- [ ] Scan check if dir is already scanned.
-  - [ ] [Keybind Commands](#keybind-commands) disable detecting file addition on neotree keybind.
-
-## ⬜ Git Watcher
-
-Use `nio.process` to capture git status instead. Incremental update when done. Debounce.
-
-## ✅ Tab Sync
-
-On tab switch, recreate the other layouts.
-
-Does not work when left -\> right -\> top -\> right. Do not have any way to test it with code. (Requires human intervention). Maybe create aucmd with AuG ID? create\_aug is not updated.
-
-Solved!!!
-
-- <https://github.com/MunifTanjim/nui.nvim/pull/332>
-
-## ⬜ Implement `wm.create_win`
-
-## ⬜ GC old state
-
-Especially window-scoped states when reference is done. Call `state:free`.
-
-# Breaking Changes
-
-## Manager
-
-The biggest rewrite happends at *manager*.
-
-Previously it was `"neo-tree.sources.manager"` which I've moved it to `"neo-tree.manager.init"`. The old manager was to initialize a state and to fetch the current active state in a very hacky code. In my rewrite, the manager strongly holds references to all states and is *the* module that is responsible of deciding which state to use and switch to the appropriate state for each `:Neotree xxx` call.
-
-A new instance of manager is created for each tabpage. This brings a lot of merits, that what state is shown where (left/right/top/left) can be managed in each manager and separately for each tabpage.
-
-However, a globally shared table `manager.source_lookup` is set as a class property, meaning that all managers access the same table so that the [State Instance](#state-instance)s can be shared across all tabpages.
-
-### Share State Among Tabs
-
-I'd like to add a global option `config.share_state_among_tabs` that, when set to true, all tabs will have the exact same neo-tree layouts.
-
-This is very easy. Add a `TabEntered` autocmd for each manager, and when the active tab is what *you* are supposed to handle, reference `global_position_state` and rearrange the layout to match this table.
-
-When a state is opened or closed, submit that to the `global_position_state` so that when user switches to a different tab, *your* layout is copied to them.
-
-## Sources
-
-### Buffer / Window Management
-
-As [Manager](#manager) handles windows and buffers, each source / state does not need to know when / where it is being placed.
-
-Instead, it is told only about the window width, and whether source is allowed to request an expansion of the width.
-
-After state has finished `tree:render()`, it does not need to check whether a window is valid or `aquire_window` or anything like that but just needs to call `manager:done()`.
-
-Therefore, `state` will no longer have `tabid`, `winid`, `bufnr` attributes. `state.current_position` is kept (and updated correctly) for backwards compatibility, but it is advised not to rely on the value of this attribute.
-
-### State Instance
-
-WIP
-
-# External Sources
-
-There are no specific changes regarding external sources. See [Sources](#sources) for the list you changes you need.
-
-However, you have the ability to specify your own commands for users to set for keybinds.
-
-# Nio Async vs Callbacks
-
-Lua heavily uses the callback method to make the execution somewhat *async*. However, this adds more complexity to the code and even worse, the base (parent) function cannot know when the callback has ended, nor get a return value from the function call.
-
-This is where [nvim-nio](https://github.com/nvim-neotest/nvim-nio) comes handly, but this is a neat wrapper around lua coroutines, so let's learn from the ground up.
-
-### Lua Async Await Article
-
-FYI, <https://github.com/ms-jpq/lua-async-await> is the best article and shows how to **implement** such library yourself with great details. I really recommend reading it if you are interested.
-
-## How to Coroutine
-
-### Callbacks and Goal
-
-I'll try to explain it with more examples and diagrams.
-
-Let's assume we want to ask for a file name and create that file.
-
-``` lua
-local function main_cb()
-  vim.ui.input({ prompt = "New file: "}, function (value)
-    vim.loop.fs_open(value, "w", 420, function (fd)
-      assert(fd, "Could not open " .. value)
-      vim.loop.fs_close(fd)
-    end)
-  end)
-end
-```
-
-Our goal is to write something like this.
-
-``` lua
-local function main_async()
-  local value = vim.ui.input({ prompt = "New file: "})
-  local fd = vim.loop.fs_open(value, "w", 420)
-  assert(fd, "Could not open " .. value)
-  vim.loop.fs_close(fd)
-end
-```
-
-### Lua Coroutines
-
-If you don't know anything about coroutine, read the [Lua Coroutine Doc](https://www.lua.org/pil/9.1.html), There are 2 important functions here: `coroutine.resume` and `coroutine.yield`.
-
-`coroutine.resume` will block the execution of one thread until `coroutine.yield` is called in another thread and when you pass arguments to `yield`, those will be passed over to `resume`.
-
-Using this trick, the main thread (`main_async`) can wait until `vim.ui.input` gets a user input and the child thread (where `vim.ui.input` runs) can `yield` back the input *on\_confirm*.
-
-``` txt
-| main thread                | sub thread                  |
-
-| main_async
-|       |
-| coroutine.resume --------- > vim.ui.input
-|       |                           |
-|       |                      on_confirm
-|       |                           |
-|       |                      coroutine.yield(user_input)
-|       | < ------------------------
-|       V
-| coroutine.resume !!
-| local value = <result-from-yield>
-```
-
-Basically, we will use `coroutine.resume(vim.ui.input, { prompt = ... }, <callback>)` and specify a *callback* that calls `coroutine.yield` at the end to return the result back to `resume`.
-
-Again <https://github.com/ms-jpq/lua-async-await> explains to more extent such as how to handle nested coroutines (i.e. sub thread also calls `resume` and wait for a sub-sub thread) and add error handling, proper traceback support on top of this mechanism.
-
-### Create an Async Function
-
-[nvim-nio](https://github.com/nvim-neotest/nvim-nio) provodes building blocks to implement this coroutine system with [`nio.wrap`](https://github.com/nvim-neotest/nvim-nio#third-party-integration).
-
-When the last argument is the callback, it is as simple as this...
-
-``` lua
-local nio = require("nio")
-
-local num_args = 2              -- how many arguments `vim.ui.input` expects, including the cb.
-local opt = { strict = true }   -- if strict, wrapped function raises exception when called in the _main thread_.
-local async_input = nio.wrap(vim.ui.input, num_args, opt)
-
-nio.run(function ()
-  local value = async_input({ prompt = "..." })
-end)
-```
-
-Let's also make one for `vim.loop.fs_open`.
-
-``` lua
-local nio = require("nio")
-
-local async_fs_open = nio.wrap(vim.loop.fs_open, 3, {})
-```
-
-Remember that the callback must be the last argument, so you'll need to create a temporary wrapper function if that's not the case. One example is `vim.defer_fn(cb, ms)` which is explained as an example in [nio's readme](https://github.com/nvim-neotest/nvim-nio#third-party-integration).
-
-### Summary
-
-Using these building blocks, the first example can be implemented like this.
-
-``` lua
-local nio = require("nio")
-
-local async_fs_close = nio.wrap(vim.loop.fs_close, 2, {})
-local function main_async()
-  local value = async_input({ prompt = "New file: "})
-  local fd = async_fs_open(value, "w", 420)
-  assert(fd, "Could not open " .. value)
-  async_fs_close(fd)
-end
-
-nio.run(main_async)
-```
-
-### Well, Actually...
-
-Well, actually these functions are already provided by nio with
-
-- `nio.ui`: <https://github.com/nvim-neotest/nvim-nio#nioui>
-- `nio.uv`: <https://github.com/nvim-neotest/nvim-nio#niouv>
-  - Even easier...
-  - `nio.file`: <https://github.com/nvim-neotest/nvim-nio#niofile>
-
-So the actual result will be
-
-``` lua
-local nio = require("nio")
-
-local function main_easy()
-  local value = nio.ui.input({ prompt = "New file: "})
-  local fd = nio.file.open(value, "w", 420)
-  assert(fd, "Could not open " .. value)
-  nio.uv.fs_close(fd)
-
-  -- and you can add more code like
-  vim.schedule(function()
-    vim.cmd.edit(value)
-  end)
-end
-
-nio.run(main_easy)
-```
-
-The biggest benefit is that although the code *looks* very much like regular code, it never blocks the execution of the main neovim lua runtime (except inside `vim.schedule` ofc), and user will never experience any stutter or freeze in the main UI.
+- [ ] rewrite `common/commands`.

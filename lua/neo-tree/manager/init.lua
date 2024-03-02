@@ -476,10 +476,10 @@ function Manager:search_win_by_winid(winid)
   if not winid then
     return nil
   end
-  local pos = self.__window_lookup_cache[winid]
-  local window = pos and self.window_lookup[pos]
+  local posid = self.__window_lookup_cache[winid]
+  local window = posid and self.window_lookup[posid]
   if window and window.winid == winid then
-    return pos
+    return posid
   else
     self.__window_lookup_cache[winid] = nil
   end
@@ -490,9 +490,9 @@ function Manager:search_win_by_state_id(state_id)
   if not state_id then
     return nil
   end
-  for pos, id in pairs(self.position_state) do
+  for posid, id in pairs(self.position_state) do
     if id == state_id then
-      return pos
+      return posid
     end
   end
 end
@@ -611,6 +611,7 @@ function Manager.setup(user_config)
         "force",
         default_source_config.commands or {},
         mod.commands or {},
+        user_config.commands or {},
         user_source_config.commands or {}
       )
       info.source_config.window = vim.tbl_deep_extend(
