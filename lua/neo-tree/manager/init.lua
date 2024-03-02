@@ -148,11 +148,20 @@ end
 ---@param state NeotreeState
 ---@param curpos NeotreeCursorPos|nil # Set cursor position. (row, col)
 function Manager:redraw(state, curpos)
-  log.timer_start("Manager:redraw")
   if state.bufnr and vim.api.nvim_buf_is_loaded(state.bufnr) then
-    nio.run(function()
-      state:redraw(self, nil, curpos)
-    end)
+    if state.winid and vim.api.nvim_win_is_valid(state.winid) then
+      local window_width = vim.api.nvim_win_get_width(state.winid)
+      log.trace(debug.traceback("Manager:redraw"))
+      log.time_it("new redraw")
+      log.timer_start("Manager:redraw")
+      nio.run(function()
+        state.redraw_request = false
+        state:redraw(self, window_width, curpos)
+      end)
+    else
+      state.redraw_request = true
+      -- state does not have a window (is hidden), so only try to redraw when it regains focus.
+    end
   end
 end
 
@@ -211,13 +220,13 @@ function Manager:open_state(state, position, dir, reveal_file)
     log.time_it("invalid bufnr. new:", state.bufnr)
   end
   local window = self:create_win(position, position, state, nil, "TODO", false)
-  local window_width = {
-    width = vim.api.nvim_win_get_width(window.winid),
-    strict = position ~= "left" and position ~= "right",
-  }
+  local window_width = vim.api.nvim_win_get_width(window.winid)
+  state.winid = window.winid
   nio.run(function()
-    local _msg = "window created (id: %s, %s), start '%s':navigate to reveal '%s'."
-    log.time_it(string.format(_msg, window.winid, vim.inspect(window_width), state.id, reveal_file))
+    local _msg = "window created (id: %s, %s), start '%s': reveal: '%s'"
+    local _file = reveal_file and reveal_file:basename() or "nil"
+    log.time_it(string.format(_msg, window.winid, vim.inspect(window_width), state.id, _file))
+    state.redraw_request = false
     return state:navigate(dir or state.dir, reveal_file, window_width, self, {})
   end)
 end
@@ -227,7 +236,8 @@ end
 ---@param requested_window_width integer|nil
 ---@param requested_curpos NeotreeCursorPos|nil
 function Manager:done(state, requested_window_width, requested_curpos)
-  log.time_it("Manager:done called.")
+  local _c = requested_curpos and ("%s, %s"):format(requested_curpos.lnum, requested_curpos.col)
+  log.time_it(string.format("Manager:done(w: %s, c: [%s])", requested_window_width, _c))
   local position = state.current_position
   if position ~= "left" and position ~= "right" then
     requested_window_width = nil
@@ -251,24 +261,17 @@ function Manager:done(state, requested_window_width, requested_curpos)
     self.global_position_state[position] = nil
   end
   renderer.position.save(state)
-  state.position = vim.tbl_extend("force", state.position, requested_curpos or {})
-  log.fmt_trace(
-    "updated_by_user: %s, position: %s",
-    state.cursor_update_by_user or false,
-    state.position or {}
-  )
+  if requested_curpos then
+    state.position = vim.tbl_extend("force", state.position, requested_curpos)
+  end
   if state.cursor_update_by_user then
     renderer.position.clear(state)
   else
-    -- TODO: This is a very nasty workaround
-    -- refactor all renderer.postiion related code later
-    state.winid = window.winid ---@diagnostic disable-line
     renderer.position.restore(state)
     renderer.position.clear(state)
-    state.winid = nil ---@diagnostic disable-line
   end
   locals.set_keymaps(window, state)
-  log.time_it("Rendering sequence done!")
+  log.time_it("rendering sequence done!")
 end
 
 ---Function called if state fails to render with given args.
