@@ -109,10 +109,18 @@ local start_resize_monitor = function()
   vim.defer_fn(check_window_size, interval)
 end
 
+M.close = function(state)
+  local mgr = require("neo-tree.manager").get_current()
+  local posid = mgr and mgr:search_win_by_state_id(state.id)
+  if mgr and posid then
+    mgr:close_win(posid)
+  end
+end
+
 ---Safely closes the window and deletes the buffer associated with the state
 ---@param state table State of the source to close
 ---@param focus_prior_window boolean | nil if true or nil, focus the window that was previously focused
-M.close = function(state, focus_prior_window)
+M.close2 = function(state, focus_prior_window)
   log.debug("Closing window, but saving position first.")
   M.position.save(state)
 
@@ -471,12 +479,17 @@ local prepare_node = function(item, state)
   return line
 end
 
+M.focus_node = function(state, id, do_not_focus_window, relative_movement, bottom_scroll_padding)
+  state:focus_node(id)
+  M.redraw(state)
+end
+
 ---Sets the cursor at the specified node.
 ---@param state table The current state of the source.
 ---@param id string? The id of the node to set the cursor at.
 ---@return boolean boolean True if the node was found and focused, false
 ---otherwise.
-M.focus_node = function(state, id, do_not_focus_window, relative_movement, bottom_scroll_padding)
+M.focus_node2 = function(state, id, do_not_focus_window, relative_movement, bottom_scroll_padding)
   if not id and not relative_movement then
     log.debug("focus_node called with no id and no relative movement")
     return false

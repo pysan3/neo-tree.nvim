@@ -993,11 +993,11 @@ function M:_copy_from_parent()
       if name_in_regex_list(key) then
         self[key] = meta_t[key]
       else
-        -- self[key] = nil
-        self[key] = function()
-          local e = "Command '%s' is not available. Please revisit the document or submit an issue."
-          log.error(string.format(e, key))
-        end
+        self[key] = nil
+        -- self[key] = function()
+        --   local e = "Command '%s' is not available. Please revisit the document or submit an issue."
+        --   log.error(string.format(e, key))
+        -- end
       end
     end
   end
