@@ -599,6 +599,8 @@ function Manager.setup(user_config)
       local mod = require(info.module_path)
       ---@type NeotreeConfig.source_config
       local user_source_config = user_config[source_name] or {}
+      user_config.window = user_config.window or {}
+      user_source_config.window = user_source_config.window or {}
       ---@type NeotreeConfig.source_config
       local default_source_config = default_config[source_name] or {} ---@diagnostic disable-line
       info.source_config = {
@@ -611,7 +613,6 @@ function Manager.setup(user_config)
         mod.commands or {},
         user_source_config.commands or {}
       )
-      user_source_config.window = user_source_config.window or {}
       info.source_config.window = vim.tbl_deep_extend(
         "force",
         default_config.window or {},
@@ -634,6 +635,7 @@ function Manager.setup(user_config)
         default_mapping_options,
         default_config.window.mappings or {},
         default_source_config.window.mappings or {},
+        user_config.window.mappings or {},
         user_source_config.window.mappings or {}
       )
       info.source_config.components = locals.merge_components(
