@@ -6,6 +6,6 @@ endif
 "             \ Neotree lua require("neo-tree.command")._command(<f-args>)
 
 " Command args completion is not working ATM
-command! -nargs=* Neotree lua require("neo-tree.command")_command(<f-args>)
+command! -nargs=* Neotree lua require("neo-tree.command")._command(<f-args>)
 
 let g:loaded_neo_tree = 1
