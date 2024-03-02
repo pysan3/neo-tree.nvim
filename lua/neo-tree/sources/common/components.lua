@@ -10,10 +10,7 @@ local log = require("neo-tree.log")
 ---                  when declaring this component in their renderer config.
 ---    node:         A NuiNode object for the currently focused node.
 ---    state:        The current state of the source providing the items.
----    window_width: A table that contains information about the width that may be allocated for the component.
----                  This table contains the following attributes.
----        width (integer):  allocated width
----        strict (boolean): whether component can exceed the width. If false, returned `wanted_width` may be respected.
+---    window_width: integer Allocated width
 ---
 ---The function should return either a table, or a list of tables, each of which
 ---contains the following keys:

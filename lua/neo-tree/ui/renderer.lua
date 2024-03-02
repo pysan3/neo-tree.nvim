@@ -11,6 +11,7 @@ local keymap = require("nui.utils.keymap")
 local autocmd = require("nui.utils.autocmd")
 local log = require("neo-tree.log")
 local windows = require("neo-tree.ui.windows")
+local nio = require("neo-tree.utils.nio_wrapper")
 
 local M = { resize_timer_interval = 50 }
 local ESC_KEY = vim.api.nvim_replace_termcodes("<ESC>", true, false, true)
@@ -342,14 +343,14 @@ end
 ---@param component NeotreeComponentBase
 ---@param item NuiTreeNode|NeotreeSourceItem
 ---@param state NeotreeState
----@param render_args NeotreeStateRenderArgs
+---@param available_width integer
 ---@return NeotreeComponentResult[]
 ---@return integer|nil wanted_width
-M.render_component = function(component, item, state, render_args)
+M.render_component = function(component, item, state, available_width)
   local component_func = state.components[component[1]]
   if component_func then
     local success, component_data, wanted_width =
-      pcall(component_func, component, item, state, render_args)
+      pcall(component_func, component, item, state, available_width)
     if success then
       if component_data == nil then
         return { {} }

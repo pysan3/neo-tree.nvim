@@ -254,6 +254,7 @@ function Manager:done(state, requested_window_width, requested_curpos)
   local posid = locals.get_posid(position)
   local window = self:create_win(posid, position, state, requested_window_width, "TODO", false)
   local new_posid = locals.get_posid(position, window.winid)
+  state.winid = window.winid
   self.position_state[new_posid] = state.id
   if state.scope == e.state_scopes.GLOBAL and locals.pos_is_fixed(new_posid) then -- Also register state to global position table.
     self.global_position_state[position] = state.id
@@ -280,7 +281,7 @@ end
 ---@param old_state NeotreeState
 ---@param dir PathlibPath # Param passed to `state:navigate`
 ---@param path_to_reveal PathlibPath|nil # Param passed to `state:navigate`
----@param window_width { width: integer, strict: boolean } # Default window width.
+---@param window_width integer # Default window width.
 ---@param args table # Optional args that may be passed from a different state on fail.
 function Manager:fail(reason, new_state_id, old_state, dir, path_to_reveal, window_width, args)
   if not new_state_id then
@@ -499,8 +500,8 @@ end
 ---Check if there exists a window for state.
 ---@param state_id NeotreeStateId
 function Manager:window_exists(state_id)
-  local pos = self:search_win_by_state_id(state_id)
-  local window = pos and self.window_lookup[pos]
+  local posid = self:search_win_by_state_id(state_id)
+  local window = posid and self.window_lookup[posid]
   if window and window.winid and vim.api.nvim_win_is_valid(window.winid) then
     return window.winid
   end
@@ -613,6 +614,7 @@ function Manager.setup(user_config)
       user_source_config.window = user_source_config.window or {}
       info.source_config.window = vim.tbl_deep_extend(
         "force",
+        default_config.window or {},
         default_source_config.window or {},
         mod.window or {},
         user_source_config.window

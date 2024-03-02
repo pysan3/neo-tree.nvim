@@ -53,6 +53,7 @@ local locals = {} -- Functions exported for test purposes
 ---@field config NeotreeConfig.source_config
 ---@field dir PathlibPath # Focused directory. May be ignored in some sources but must be set.
 ---@field bufnr integer|nil # Buffer this state is attached to.
+---@field winid integer|nil # Window id set by manager. Do not trust or change this value.
 ---@field cursor_update_by_user boolean|nil # Set to true when user moves the cursor during navigation / redraw.
 ---@field current_position NeotreeWindowPosition # READONLY. Set by manager before `self:navigate`.
 ---@field position table # See `ui/renderer.lua > position`
@@ -62,7 +63,7 @@ local locals = {} -- Functions exported for test purposes
 ---@field tree NuiTree|nil # Cache NuiTree if possible.
 ---@field _tree_lock nio.control.Semaphore|nil
 ---@field focused_node string|nil # Node id of focused node if any.
----@field render_args NeotreeStateRenderArgs|table # State used in tree.prepare_node(item).
+---@field render_context NeotreeStateRenderArgs|table # State used in tree.prepare_node(item).
 local Source = setmetatable({
   -- Attributes defined here will be shared across all instances of Manager
   -- Think it as a class attribute, and put caches, const values here.
@@ -108,7 +109,7 @@ end
 ---Prepare for render. And write to buffer.
 ---@param dir PathlibPath # Directory to work with. Mostly `cwd`.
 ---@param path_to_reveal PathlibPath|nil # Reveal and focus on this file on startup.
----@param window_width { width: integer, strict: boolean } # Default window width.
+---@param window_width integer # Default window width.
 ---@param manager NeotreeManager # Call `manager.done(self, request_window_width)` after buffer is ready.
 ---@param failed_args table # Optional args that map be passed from a different state on fail.
 function Source:navigate(dir, path_to_reveal, window_width, manager, failed_args)
@@ -121,14 +122,13 @@ function Source:navigate(dir, path_to_reveal, window_width, manager, failed_args
   if not self.bufnr then
     self.bufnr = vim.api.nvim_create_buf(false, false)
   end
-  self:prepare_rendar_args(window_width, not window_width.strict)
   local items = {} -- fill in the items here.
   self:show_nodes(items, self.tree, nil, self.config.group_empty_dirs and Path.sep_str or nil)
   if path_to_reveal then
     self:focus_node(path_to_reveal:tostring())
   end
   nio.run(function()
-    self:redraw(manager)
+    self:redraw(manager, window_width)
   end, function(success, err)
     -- callback: called right after the above async function is finished.
     log.time_it(string.format("self:redraw: fail: %s, err: %s", not success, err))
@@ -137,10 +137,9 @@ end
 
 ---Redraw the tree without relaoding from the source.
 ---@param manager NeotreeManager # Call done when you are done.
----@param request_window_width integer|nil
+---@param window_width integer # Default window width.
 ---@param curpos NeotreeCursorPos|nil
-function Source:redraw(manager, request_window_width, curpos)
-  log.time_it("state:redraw start.")
+function Source:redraw(manager, window_width, curpos)
   local acquired = false
   self:cancel_all_tasks("render_tree")
   -- start new render
@@ -148,10 +147,11 @@ function Source:redraw(manager, request_window_width, curpos)
     function()
       if self.focused_node then
         self:focus_node(self.focused_node)
-        log.time_it("focus node: " .. self.focused_node)
+        log.time_it("focused_node:", self.focused_node)
       else
         log.time_it("no focus node")
       end
+      self:prepare_rendar_args(window_width, self.window.auto_expand_width)
       self._tree_lock.acquire()
       acquired = true
       log.time_it("tree mutex acquired")
@@ -167,14 +167,19 @@ function Source:redraw(manager, request_window_width, curpos)
           curpos = { lnum = linenr, col = string.len(node.indent or "") }
           local _msg = "focus node: %s, linenr: %s, curpos: %s"
           log.fmt_trace(_msg, node:get_id(), linenr, vim.inspect(curpos))
-          self.focused_node = nil
         end
+      else
+        log.time_it("no focus node:", self.focused_node)
+        log.time_it("no focus node:", curpos)
       end
-      manager:done(self, request_window_width or self.render_args.longest_node, curpos)
+      manager:done(self, self.render_context.longest_node, curpos)
     end,
     "render_tree",
     function(success)
       log.time_it(string.format("%s redraw success: %s, acquired: %s", self.id, success, acquired))
+      if success then
+        self.focused_node = nil
+      end
       return acquired and self._tree_lock.release()
     end
   )
@@ -193,6 +198,7 @@ function Source:focus_node(node_id)
       self.focused_node = node_id
     end
   end)
+  self.focused_node = node_id
 end
 
 function locals.expand_to_node(tree, node)
@@ -262,17 +268,21 @@ end
 ---@return integer request_window_width
 function Source:render_tree(tree, linenr_start)
   tree.bufnr = self.bufnr -- double check bufnr is set correctly
-  local old_longest_node = self.render_args.longest_node
-  if self.render_args.in_pre_render then
+  local old_longest_node = self.render_context.longest_node
+  if self.render_context.in_pre_render then
     tree:render(linenr_start)
-    self.render_args.in_pre_render = false
-    if old_longest_node >= self.render_args.longest_node then
+    self.render_context.in_pre_render = false
+    if old_longest_node >= self.render_context.longest_node then
       -- Current tree fits into the width. No need to rerender.
+      log.time_it("tree fits length in pre_render:", old_longest_node)
       return old_longest_node
+    else
+      self.render_context.remaining_cols = self.render_context.longest_node
+      log.time_it("not enough length. rerender:", self.render_context.remaining_cols)
     end
   end
   tree:render(linenr_start)
-  return self.render_args.longest_node
+  return self.render_context.longest_node
 end
 
 ---@param ns_id integer|nil # Highlight namespace id. If nil, uses neo-tree's default namespace.
@@ -295,14 +305,13 @@ function Source:prepare_tree(ns_id, prepare_node_func)
   end
 end
 
----@param window_width { width: integer, strict: boolean } # Default window width.
+---@param window_width integer # Default window width.
 ---@param do_pre_render boolean|nil # Whether to pre_render to find longest node for auto_expand.
 function Source:prepare_rendar_args(window_width, do_pre_render)
-  self.render_args = {
+  self.render_context = {
     in_pre_render = do_pre_render or false,
-    remaining_cols = window_width.width,
-    longest_node = window_width.width,
-    strict = window_width.strict,
+    remaining_cols = window_width,
+    longest_node = window_width,
   }
 end
 
@@ -319,14 +328,6 @@ function Source:prepare_node(item)
       return nil
     end
   end
-  -- reuse cache if exists and not during pre_render mode
-  if not self.render_args.in_pre_render and item.line then
-    local _ = item.line
-    item.line = nil
-    if item.wanted_width and item.wanted_width <= self.render_args.longest_node then
-      return _
-    end
-  end
   -- Generate line using `NeotreeComponent` in `self.renderers`.
   local line = NuiLine()
   local renderer = self.config.renderers[item.type]
@@ -336,12 +337,11 @@ function Source:prepare_node(item)
     return line
   end
   item.wanted_width = 0
-  local remaining_cols = self.render_args.remaining_cols
+  local remaining_cols = self.render_context.remaining_cols
   local should_pad = false
   for _, component in ipairs(renderer) do
     if component.enabled ~= false then
-      local datas, wanted_width =
-        ui_rndr.render_component(component, item, self, { remaining_cols = remaining_cols })
+      local datas, wanted_width = ui_rndr.render_component(component, item, self, remaining_cols)
       if datas then
         local actual_width = 0
         for _, data in ipairs(datas) do
@@ -361,13 +361,8 @@ function Source:prepare_node(item)
       end
     end
   end
-  if self.render_args.in_pre_render then
-    item.line = line
-    if item.wanted_width > self.render_args.longest_node then
-      self.render_args.longest_node = item.wanted_width
-    end
-  else
-    item.line = nil
+  if self.render_context.in_pre_render and item.wanted_width > self.render_context.longest_node then
+    self.render_context.longest_node = item.wanted_width
   end
   return line
 end
@@ -557,6 +552,16 @@ function Source:__debug_visualize_tree(id, indent)
   local nodes = self.tree:get_nodes(id)
   for _, node in ipairs(nodes) do
     print(string.rep(" ", node:get_depth() * (indent or 2)) .. node:get_id())
+    local g = node.pathlib and node.pathlib.git_state
+    local function tf(bool)
+      return bool and " true" or "false"
+    end
+    if g then
+      local is_set = g.is_ready and g.is_ready.is_set()
+      local msg = "set: %s, ignored: %s, state: (c: %s, s: %s)"
+      local x = msg:format(tf(is_set), tf(g.ignored), g.state.change, g.state.status)
+      print(string.rep(" ", (node:get_depth() + 1) * (indent or 2)) .. x)
+    end
     self:__debug_visualize_tree(node:get_id(), indent)
   end
 end
@@ -578,6 +583,20 @@ function Source:add_task(func, batch_name, cb)
 end
 
 ---@param batch_name string|nil # Unique name for batch. If nil, refers to global task list.
+---@return integer num_tasks # Number of waiting or running tasks.
+function Source:has_task(batch_name, cb)
+  if not self._workers then
+    return 0
+  end
+  batch_name = batch_name or "__global_workers"
+  if not self._workers[batch_name] then
+    return 0
+  end
+  local _batch = self._workers[batch_name]
+  return math.max(_batch.index - _batch.done, 0)
+end
+
+---@param batch_name string|nil # Unique name for batch. If nil, refers to global task list.
 ---@param until_now boolean|nil # If true, only waits tasks registered until this function was called. Otherwise, waits for all tasks registered throughout the instance.
 function Source:wait_all_tasks(batch_name, until_now)
   batch_name = batch_name or "__global_workers"
@@ -588,7 +607,9 @@ function Source:wait_all_tasks(batch_name, until_now)
   local wait_until = until_now and _batch.index or nil
   -- Block exec until other setups is completed
   local done = nio.wait_all(_batch, _batch.done + 1, wait_until)
-  if done > _batch.done then
+  if done == _batch.index then
+    self._workers[batch_name] = nil
+  elseif done > _batch.done then
     _batch.done = done
   end
 end
@@ -602,8 +623,26 @@ function Source:cancel_all_tasks(batch_name)
   local _batch = self._workers[batch_name]
   -- Block exec until other setups is completed
   local done = nio.cancel_all(_batch, _batch.done + 1)
-  if done > _batch.done then
+  if done == _batch.index then
+    self._workers[batch_name] = nil
+  elseif done > _batch.done then
     _batch.done = done
+  end
+end
+
+function Source:assign_future_redraw(future)
+  if not future or future.is_set() then
+    return
+  end
+  local name = "__future_redraw_" .. tostring(future)
+  if self:has_task(name) == 0 then
+    nio.run(function()
+      self:add_task(function()
+        future.wait()
+      end, name)
+      self:wait_all_tasks(name)
+      renderer.redraw(self)
+    end)
   end
 end
 

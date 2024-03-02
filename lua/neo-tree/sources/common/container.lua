@@ -83,7 +83,8 @@ local render_content = function(config, node, state, container_context)
       if item.enabled ~= false then
         local required_width = item.required_width or 0
         if required_width <= container_context.remaining_cols then
-          local rendered_items = renderer.render_component(item, node, state, container_context)
+          local rendered_items =
+            renderer.render_component(item, node, state, container_context.remaining_cols)
           if rendered_items then
             local align = item.align or "left"
             should_pad[align] = add_padding(rendered_items, should_pad[align])
@@ -250,44 +251,39 @@ local merge_content = function(container_context)
     if utils.truthy(layer.right) then
       local width = calc_rendered_width(layer.right)
       wanted_width = wanted_width + width
-      if remaining_width > 0 then
-        container_context.has_right_content = true
-        if width > remaining_width then
-          local truncated = truncate_layer_keep_right(layer.right, right_width, remaining_width)
-          vim.list_extend(right, truncated)
-          remaining_width = 0
-        else
-          remaining_width = remaining_width - width
-          vim.list_extend(right, layer.right)
-          right_width = right_width + width
-        end
+      if width > remaining_width then
+        local truncated = truncate_layer_keep_right(layer.right, right_width, remaining_width)
+        vim.list_extend(right, truncated)
+        remaining_width = 0
+      elseif remaining_width > 0 then
+        remaining_width = remaining_width - width
+        vim.list_extend(right, layer.right)
+        right_width = right_width + width
       end
     end
     if utils.truthy(layer.left) then
       local width = calc_rendered_width(layer.left)
       wanted_width = wanted_width + width
-      if remaining_width > 0 then
-        if width > remaining_width then
-          local truncated = truncate_layer_keep_left(layer.left, left_width, remaining_width)
-          if container_context.enable_character_fade then
-            try_fade_content(truncated, 3)
-          end
-          vim.list_extend(left, truncated)
-          remaining_width = 0
-        else
-          remaining_width = remaining_width - width
-          if container_context.enable_character_fade and container_context.strict then
-            local fade_chars = 3 - remaining_width
-            if fade_chars > 0 then
-              try_fade_content(layer.left, fade_chars)
-            end
-          end
-          vim.list_extend(left, layer.left)
-          left_width = left_width + width
+      if width > remaining_width then
+        local truncated = truncate_layer_keep_left(layer.left, left_width, remaining_width)
+        if container_context.enable_character_fade and not container_context.auto_expand_width then
+          try_fade_content(truncated, 3)
         end
+        vim.list_extend(left, truncated)
+        remaining_width = 0
+      elseif remaining_width > 0 then
+        remaining_width = remaining_width - width
+        if container_context.enable_character_fade and not container_context.auto_expand_width then
+          local fade_chars = 3 - remaining_width
+          if fade_chars > 0 then
+            try_fade_content(layer.left, fade_chars)
+          end
+        end
+        vim.list_extend(left, layer.left)
+        left_width = left_width + width
       end
     end
-    if remaining_width == 0 and container_context.strict then
+    if remaining_width == 0 and not container_context.auto_expand_width then
       i = 0
       break
     end
@@ -302,27 +298,25 @@ local merge_content = function(container_context)
     right[1].no_padding = true
   end
   vim.list_extend(container_context.merged_content, right)
-  log.trace("wanted width: ", wanted_width, " actual width: ", container_context.container_width)
+  -- log.trace("wanted width: ", wanted_width, " actual width: ", container_context.container_width)
   return wanted_width
 end
 
----comment
 ---@param config NeotreeComponent.container
 ---@param node NuiTreeNode|NeotreeSourceItem
 ---@param state NeotreeState
----@param render_args NeotreeStateRenderArgs
-M.render = function(config, node, state, render_args)
-  ---@class NeotreeContainerContext : NeotreeStateRenderArgs
-  local container_context = setmetatable({
-    has_right_content = false,
+---@param available_width integer
+M.render = function(config, node, state, available_width)
+  ---@class NeotreeContainerContext
+  local container_context = {
     wanted_width = 0,
     left_padding = 0, -- config.left_padding,
     right_padding = config.right_padding,
     enable_character_fade = config.enable_character_fade,
-    available_width = render_args.remaining_cols,
-  }, {
-    __index = render_args,
-  })
+    available_width = available_width,
+    remaining_cols = available_width,
+    auto_expand_width = state.window.auto_expand_width and state.current_position ~= "float",
+  }
 
   local grouped_by_zindex, max_width = render_content(config, node, state, container_context)
   ---@type integer
@@ -338,11 +332,6 @@ M.render = function(config, node, state, render_args)
   if container_context.wanted_width < wanted_width then
     container_context.wanted_width = wanted_width
   end
-
-  ---@deprecated `state.has_right_content`
-  -- if container_context.has_right_content then
-  --   state.has_right_content = true
-  -- end
 
   -- we still want padding between this container and the previous component
   if #container_context.merged_content > 0 then
