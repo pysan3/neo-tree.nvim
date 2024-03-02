@@ -661,8 +661,8 @@ M.position = {
       local win_state = mgr:nvim_win_call(state.id, vim.fn.winsaveview)
       state.position.topline = win_state.topline
       state.position.lnum = win_state.lnum
-      log.debug("Saved cursor position with lnum: " .. state.position.lnum)
-      log.debug("Saved window position with topline: " .. state.position.topline)
+      log.debug("Saved cursor position with lnum:", state.position.lnum)
+      log.debug("Saved window position with topline:", state.position.topline)
       -- Only need to restore the cursor state once per save, comes
       -- into play when some actions fire multiple times per "iteration"
       -- within the scope of where we need to perform the restore operation
@@ -683,12 +683,12 @@ M.position = {
     state.position.is.restorable = false
   end,
   restore = function(state)
-    if state.position.is.restorable then
-      if state.position.topline and state.position.lnum then
-        log.debug("Restoring window position to topline: " .. state.position.topline)
-        log.debug("Restoring cursor position to lnum: " .. state.position.lnum)
+    if state.position.is.restorable or true then
+      if state.position.topline or state.position.lnum then
+        log.debug("Restoring window position to topline:", state.position.topline)
+        log.debug("Restoring cursor position to lnum:", state.position.lnum)
         vim.api.nvim_win_call(state.winid, function()
-          vim.fn.winrestview({ topline = state.position.topline, lnum = state.position.lnum })
+          vim.fn.winrestview(state.position)
         end)
         -- Clear saved position, so that we can save another position later.
         state.position.topline = nil
@@ -713,12 +713,11 @@ M.position = {
 ---@param state NeotreeState
 ---@param curpos NeotreeCursorPos|nil # Set cursor position. (row, col)
 M.redraw = function(state, curpos)
-  vim.schedule(function()
-    local mgr = require("neo-tree.manager").get_current()
-    if mgr then
-      mgr:redraw(state, curpos)
-    end
-  end)
+  nio.scheduler()
+  local mgr = require("neo-tree.manager").get_current()
+  if mgr then
+    mgr:redraw(state, curpos)
+  end
 end
 
 ---Redraw the tree without relaoding from the source.
