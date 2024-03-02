@@ -4,7 +4,7 @@ description: A migration guideline to neo-tree v4 for developers and a TODO list
 authors: takuto
 categories:
 created: 2024-02-19T16:25:02+0900
-updated: 2024-03-01T11:10:43+0000
+updated: 2024-03-02T07:54:01+0000
 version: 1.1.1
 @end
 
@@ -28,40 +28,23 @@ version: 1.1.1
   return {
     "nvim-neo-tree/neo-tree.nvim",
     dir = vim.env.NVIM_NEOTREE_DEV and "/path/to/neo-tree.nvim" or nil, -- Add this line and point to the cloned repo.
+    version = false,
+    dependencies = {
+      { "MunifTanjim/nui.nvim" },
+      { "3rd/image.nvim" },
+      { "pysan3/pathlib.nvim" },
+      { "nvim-neotest/nvim-nio" },
+      { "nvim-tree/nvim-web-devicons" },
+      { "miversen33/netman.nvim" },
+    },
+    opts = {
+      -- ...
+    }
   }
   @end
 
    Rest of your config should not have any breaking changes, except that I haven't implemented
    the complete feature set yet, so some options are just ignored now.
-
-** Magic Script to Reload Neotree
-   During plugin development, when you change some code, you'd have to close nvim and then reopen
-   to get the new changes applied.
-   But that's not how we (programmers) work.
-
-   Put this in a random lua file (`reload.lua`) and each time you `:so reload.lua`, you'll get the new
-   code applied without closing neovim.
-   Don't forget to use `vim.startswith` cuz we need to also clear required files like `"neo-tree.ui.renderer"`.
-
-   For more info, see {https://github.com/folke/lazy.nvim/issues/445#issuecomment-1426070401}.
-
-   @code lua
-   for key, _ in pairs(package.loaded) do
-     if vim.startswith(key, "neo-tree") then
-       package.loaded[key] = nil
-     end
-   end
-   local plugin = require("lazy.core.config").plugins["neo-tree.nvim"]
-   require("lazy.core.loader").reload(plugin)
-   local suc, mod = pcall(require, "neo-tree")
-   assert(suc and mod)
-   @end
-
-   BTW if you use noice and `:NoiceHistory` becomes too long, run the following code to flush the history.
-   More info: {https://github.com/folke/noice.nvim/issues/731}.
-   @code lua
-   require("noice.message.manager")._history = {}
-   @end
 
 * Road Map
 
@@ -180,9 +163,20 @@ version: 1.1.1
 
 ** 🔳 Git Watcher
 
-   Use `nio.process` to capture git status instead.
-   Incremental update when done.
-   Debounce.
+   - (x) Use `nio.process` to capture git status instead.
+   -- (x) Done on pathlib side.
+   - (x) Incremental update when done.
+   - (x) Debounce.
+   -- (x) Done on pathlib side.
+   - (x) watch with fs_watch
+   - ( ) watch with tree update (for users without fs_watch)
+   -- ( ) BufWritePost
+
+** 🔳 `renderer.redraw`
+
+   - (x) Halt current rendering and restart (call `state:redraw`)
+   - ( ) But not when state is hidden.
+   - ( ) But redraw when state regains focus.
 
 ** ✅ Tab Sync
 
