@@ -237,7 +237,7 @@ log.new = function(config, standalone)
     local elapsed = (vim.loop.hrtime() - obj.__timer_start) / 1000 / 1000
     local async = require("neo-tree.utils.nio_wrapper").current_task() and " on" or "off"
     -- TODO: remove this print and move to log.trace <pysan3>
-    print(string.format("%s async(%s) %6.2f ms:", obj.__timer_label, async, elapsed), ...)
+    -- print(string.format("%s async(%s) %6.2f ms:", obj.__timer_label, async, elapsed), ...)
     return log_at_level(
       1,
       obj.config.modes[1],
