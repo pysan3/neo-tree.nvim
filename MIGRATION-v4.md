@@ -43,12 +43,12 @@ Here are the list of features that I haven't implemented / tested yet. I'll most
 
 Make auto completion possible with `:Neotree` command. This one is pretty difficult as results must be returned before lazy loading.
 
-## 🔳 Neotree float
+## ✅ Neotree float
 
 I just haven't looked into the nui options.
 
-- [ ] Implement `wm.create_win`.
-- [ ] Set window color groups here.
+- [x] Implement `wm.create_win`.
+- [x] Set window color groups here.
 
 ## ✅ Highlights
 
