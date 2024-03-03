@@ -7,12 +7,15 @@ local nio = require("neo-tree.utils.nio_wrapper")
 local M = {}
 
 local should_use_popup_input = function()
-  local nt = require("neo-tree")
-  return utils.get_value(nt.config, "use_popups_for_input", true, false)
+  -- TODO: We cannot fetch global config options here. Needs refactor or input with func args.
+  -- local nt = require("neo-tree")
+  -- return utils.get_value(nt.config, "use_popups_for_input", true, false)
+  return true
 end
 
 M.show_input = function(input, callback)
-  local config = require("neo-tree").config
+  -- TODO: We cannot fetch global config options here. Needs refactor or input with func args.
+  local config = require("neo-tree.defaults")
   input:mount()
 
   if config.enable_normal_mode_for_inputs and input.prompt_type ~= "confirm" then

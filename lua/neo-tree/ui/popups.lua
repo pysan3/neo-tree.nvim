@@ -10,10 +10,12 @@ M.popup_options = function(title, min_width, override_options, popup_border_styl
   min_width = min_width or 30
   local width = string.len(title) + 2
 
-  if not popup_border_style then
-    popup_border_style = require("neo-tree").config.popup_border_style
-      or require("neo-tree.defaults").popup_border_style
-  end
+  -- TODO: We cannot fetch global config options here. Needs refactor or input with func args.
+  -- if not popup_border_style then
+  --   popup_border_style = require("neo-tree").config.popup_border_style
+  --     or require("neo-tree.defaults").popup_border_style
+  -- end
+  popup_border_style = "NC"
   local popup_border_text = NuiText(" " .. title .. " ", highlights.FLOAT_TITLE)
   local col = 0
   -- fix popup position when using multigrid
