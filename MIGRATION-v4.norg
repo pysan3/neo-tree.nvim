@@ -4,7 +4,7 @@ description: A migration guideline to neo-tree v4 for developers and a TODO list
 authors: takuto
 categories:
 created: 2024-02-19T16:25:02+0900
-updated: 2024-03-03T15:26:32+0000
+updated: 2024-03-03T18:26:09+0000
 version: 1.1.1
 @end
 
@@ -140,6 +140,12 @@ version: 1.1.1
    Implement some kind of session save / restore mechanism
    that is able to survive across different nvim sessions.
    - ( ) {https://github.com/nvim-neo-tree/neo-tree.nvim/pull/1366#issuecomment-1968943373}
+
+   We now have an upstream issue that `nvim_buf_set_lines` (used inside `NuiTree:render()`)
+   changes the cursor position.
+   My version of `renderer.position.restore()` does force the cursor to the correct position
+   but there's a noticeable flash before restore kicks in.
+   - {https://github.com/neovim/neovim/issues/27720}
 
 ** ✅ Keybinds
 

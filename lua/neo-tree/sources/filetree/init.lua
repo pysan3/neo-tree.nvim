@@ -313,20 +313,20 @@ function Filetree:fill_tree(parent_id, depth, reveal_path)
           tree:set_nodes(nodes[key], key)
         end
         added_nodes = added_nodes + #nodes[key]
-        -- TODO: Implement a method to sort children here. No need to deep-sort any more.
-        -- if self.sort_function then
-        --   table.sort(parent._child_ids, function(a, b)
-        --     return self.sort_function(tree, parent:get_id(), a, b)
-        --   end)
-        -- end
-        -- if parent:has_children() then
-        --   local child_ids = parent:get_child_ids()
-        --   local child_len = #child_ids
-        --   for index, child_id in ipairs(child_ids) do
-        --     local _n = tree:get_node(child_id)
-        --     _n.is_last_child = index == child_len
-        --   end
-        -- end
+        if parent:has_children() then
+          -- TODO: Implement a method to sort children here. No need to deep-sort any more.
+          if true then -- self.sort_function then
+            table.sort(parent._child_ids, function(a, b)
+              return a < b
+            end)
+          end
+          local child_ids = parent:get_child_ids()
+          local child_len = #child_ids
+          for index, child_id in ipairs(child_ids) do
+            local _n = tree:get_node(child_id)
+            _n.is_last_child = index == child_len
+          end
+        end
         parent.loaded = true
       end
     end
