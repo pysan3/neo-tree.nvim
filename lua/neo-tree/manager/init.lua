@@ -184,6 +184,9 @@ function Manager:navigate(args)
   if not args.scope then
     args.scope = locals.calculate_default_scope(args.position)
   end
+  if args.reveal and not args.reveal_file then
+    args.reveal_file = self:get_path_to_reveal()
+  end
   local state = self:search_state(args.source, {
     id = args.id,
     dir = args.dir,
@@ -830,6 +833,28 @@ function locals.merge_components(default, ...)
     end
   end
   return components
+end
+
+---Return the path of current buffer if it is a _real file_ that can be followed.
+---@param include_terminals boolean|nil
+---@return string|nil path_to_reveal
+function Manager:get_path_to_reveal(include_terminals)
+  local winid = vim.api.nvim_get_current_win()
+  local cfg = vim.api.nvim_win_get_config(winid)
+  if cfg.relative and cfg.relative:len() > 0 or cfg.external then
+    return nil
+  end
+  if self:search_win_by_winid(winid) then
+    return nil
+  end
+  local path = vim.fn.expand("%:p")
+  if not utils.truthy(path) then
+    return nil
+  end
+  if not include_terminals and path:match("term://") then
+    return nil
+  end
+  return path
 end
 
 ---Merge renderers from config and insert default keys for each component

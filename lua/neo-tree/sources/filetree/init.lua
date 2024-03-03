@@ -65,6 +65,22 @@ function Filetree.new(config, id, dir)
   end)
   self.filtered_items = locals.purify_filtered_items(config.filtered_items or {})
 
+  -- Configure event handler for follow_current_file option
+  if config.follow_current_file.enabled then
+    events.subscribe({
+      event = events.VIM_BUFFER_ENTER,
+      handler = function(args)
+        if utils.is_real_file(args.afile) then
+          self:add_task(function()
+            self:focus_node(vim.fn.fnamemodify(args.afile, ":p"))
+            renderer.redraw(self)
+          end)
+        end
+      end,
+      id = "__follow_current_file_" .. self.id,
+    })
+  end
+
   -- -- before_render is deprecated. Convert to event system
   -- if config.before_render then ---@diagnostic disable-line
   --   events.subscribe({
@@ -147,18 +163,6 @@ function Filetree.setup(config, global_config)
   --       handler = wrap(manager.opened_buffers_changed),
   --     })
   --   end
-  -- end
-
-  -- -- Configure event handler for follow_current_file option
-  -- if config.follow_current_file.enabled then
-  --   manager.subscribe(M.name, {
-  --     event = events.VIM_BUFFER_ENTER,
-  --     handler = function(args)
-  --       if utils.is_real_file(args.afile) then
-  --         M.follow()
-  --       end
-  --     end,
-  --   })
   -- end
 end
 
@@ -458,7 +462,7 @@ function Filetree:assign_file_watcher(pathlib)
     -- vim.print(string.format([[args.dir: %s]], args.dir))
     local do_redraw = false
     if args.events.change then -- file has been modified
-      pathlib_git.request_git_status_update(_p)
+      pathlib_git.request_git_status_update(_p, args)
       self:assign_future_redraw(_p.git_state.is_ready)
     end
     if args.events.rename and _p:basename() == args.filename then -- file has been removed

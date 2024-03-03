@@ -104,6 +104,12 @@ end
 function Source:free_mem()
   -- Deconstructor
   -- Eg clear cache etc.
+  local event_ids = {
+    "__follow_current_file_",
+  }
+  for _, prefix in ipairs(event_ids) do
+    events.destroy_event({ id = prefix .. self.id })
+  end
 end
 
 ---Prepare for render. And write to buffer.
@@ -190,6 +196,9 @@ end
 function Source:focus_node(node_id)
   if node_id == nil then
     return
+  end
+  if not vim.startswith(node_id, self.dir:tostring()) then
+    return nil
   end
   self:modify_tree(function(tree)
     local node, linenr = self.tree:get_node(node_id)

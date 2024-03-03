@@ -4,7 +4,7 @@ description: A migration guideline to neo-tree v4 for developers and a TODO list
 authors: takuto
 categories:
 created: 2024-02-19T16:25:02+0900
-updated: 2024-03-03T12:05:51+0000
+updated: 2024-03-03T14:57:38+0000
 version: 1.1.1
 @end
 
@@ -56,11 +56,49 @@ version: 1.1.1
    Make auto completion possible with `:Neotree` command.
    This one is pretty difficult as results must be returned before lazy loading.
 
+** 🔳 Command Args
+
+   - (-) action
+   -- (x) "close"
+   -- (x) "focus"
+   -- ( ) "show"
+   -- (x) "toggle"
+   -- (x) "closeall"
+   -- (x) "toggleall"
+   - ( ) source
+   -- (-) filetree
+   -- ( ) filesystem
+   -- ( ) buffers
+   -- ( ) git
+   -- ( ) document symbols
+   - (x) position
+   -- (x) left, right, top, bottom
+   -- (x) float
+   -- (x) current
+   - (x) toggle
+   - ( ) scope
+   -- ( ) global
+   -- ( ) tabpage
+   -- ( ) window
+   - ( ) reveal
+   - (x) reveal_file
+   -- ( ) reveal file is outside of cwd
+   - ( ) dir
+   -- ( ) ask if change cwd
+   - (x) id
+
 ** ✅ Neotree float
 
    I just haven't looked into the nui options.
    - (x) Implement `wm.create_win`.
    - (x) Set window color groups here.
+   - ( ) Close when not in focus.
+
+** 🔳 Sort Nodes
+
+   I want to come up with a more efficient way of sorting the nodes.
+   v3 does a deep sort for every render, but if we can keep track of
+   what was added, theoretically we only need to sort the modified nodes.
 
 ** ✅ Highlights
 
