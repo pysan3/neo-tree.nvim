@@ -159,8 +159,8 @@ function Manager:redraw(state, curpos)
         state:redraw(self, window_width, curpos)
       end)
     else
-      state.redraw_request = true
       -- state does not have a window (is hidden), so only try to redraw when it regains focus.
+      state.redraw_request = true
     end
   end
 end
@@ -708,9 +708,13 @@ end
 function Manager:on_buf_win_enter()
   local current_winid = vim.api.nvim_get_current_win()
   local posid = self:search_win_by_winid(current_winid)
-  if not posid or not locals.pos_is_fixed(posid) then
-    log.time_it("no posid")
+  if posid and vim.tbl_contains(e.valid_float_window_positions, posid) then
     return
+  else
+    self:close_win(e.valid_window_positions.FLOAT)
+    if not posid or not locals.pos_is_fixed(posid) then
+      return
+    end
   end
   local bufnr = vim.api.nvim_get_current_buf()
   local window = self.window_lookup[posid]

@@ -43,12 +43,48 @@ Here are the list of features that I haven't implemented / tested yet. I'll most
 
 Make auto completion possible with `:Neotree` command. This one is pretty difficult as results must be returned before lazy loading.
 
+## 🔳 Command Args
+
+- [ ] action
+  - [x] "close"
+  - [x] "focus"
+  - [ ] "show"
+  - [x] "toggle"
+  - [x] "closeall"
+  - [x] "toggleall"
+- [ ] source
+  - [ ] filetree
+  - [ ] filesystem
+  - [ ] buffers
+  - [ ] git
+  - [ ] document symbols
+- [x] position
+  - [x] left, right, top, bottom
+  - [x] float
+  - [x] current
+- [x] toggle
+- [ ] scope
+  - [ ] global
+  - [ ] tabpage
+  - [ ] window
+- [ ] reveal
+- [x] reveal\_file
+  - [ ] reveal file is outside of cwd
+- [ ] dir
+  - [ ] ask if change cwd
+- [x] id
+
 ## ✅ Neotree float
 
 I just haven't looked into the nui options.
 
 - [x] Implement `wm.create_win`.
 - [x] Set window color groups here.
+- [x] Close when not in focus.
+
+## 🔳 Sort Nodes
+
+I want to come up with a more efficient way of sorting the nodes. v3 does a deep sort for every render, but if we can keep track of what was added, theoretically we only need to sort the modified nodes.
 
 ## ✅ Highlights
 
