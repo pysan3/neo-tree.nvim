@@ -219,7 +219,7 @@ function Manager:open_state(state, position, dir, reveal_file)
     state.bufnr = vim.api.nvim_create_buf(false, false)
     log.time_it("invalid bufnr. new:", state.bufnr)
   end
-  local window = self:create_win(position, position, state, nil, "TODO", false)
+  local window = self:create_win(position, position, state, nil, "TODO", true)
   local window_width = vim.api.nvim_win_get_width(window.winid)
   state.winid = window.winid
   nio.run(function()
@@ -239,14 +239,17 @@ function Manager:done(state, requested_window_width, requested_curpos)
   local _c = requested_curpos and ("%s, %s"):format(requested_curpos.lnum, requested_curpos.col)
   log.time_it(string.format("Manager:done(w: %s, c: [%s])", requested_window_width, _c))
   local position = state.current_position
-  if position ~= "left" and position ~= "right" then
-    requested_window_width = nil
+  if
+    vim.tbl_contains(e.valid_float_window_positions, position)
+    or vim.tbl_contains(e.valid_phantom_window_positions, position)
+  then
+    requested_window_width = nil -- do not allow expand width
   end
   nio.scheduler()
-  for pos, state_id in pairs(self.position_state) do
-    if state_id == state.id and pos ~= position then
-      self:close_win(pos)
-      log.time_it("Close other win:", pos)
+  for posid, state_id in pairs(self.position_state) do
+    if state_id == state.id and (posid ~= position and posid ~= state.winid) then
+      self:close_win(posid)
+      log.time_it("Close other win:", posid)
     end
   end
   self.previous_source = state.name
@@ -416,6 +419,9 @@ function Manager:create_win(posid, position, state, requested_width, name, focus
   if not window then
     position = position or locals.get_position(posid)
     window = wm.create_win(position, state.window, requested_width, name, state.bufnr)
+    window:on("BufWinLeave", function(args)
+      renderer.position.save(state)
+    end, { once = true })
     log.time_it("no window, created. bufnr:", state.bufnr)
   end
   window.bufnr = state.bufnr
@@ -434,9 +440,6 @@ function Manager:create_win(posid, position, state, requested_width, name, focus
   if focus then
     vim.api.nvim_set_current_win(window.winid)
   end
-  window:on("BufWinLeave", function(args)
-    renderer.position.save(state)
-  end, { once = true })
   self.window_lookup[posid] = window
   self.__window_lookup_cache[window.winid or -1] = posid
   return window
