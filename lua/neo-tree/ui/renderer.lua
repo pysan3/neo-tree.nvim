@@ -113,6 +113,7 @@ M.close = function(state)
   local mgr = require("neo-tree.manager").get_current()
   local posid = mgr and mgr:search_win_by_state_id(state.id)
   if mgr and posid then
+    M.position.save(state)
     mgr:close_win(posid)
   end
 end
@@ -955,9 +956,6 @@ local function create_floating_window(state, win_options, bufname)
   state.bufnr = win.bufnr
   log.debug("Created floating window with winid: ", win.winid, " and bufnr: ", win.bufnr)
   vim.api.nvim_buf_set_name(state.bufnr, bufname)
-
-  -- why is this necessary?
-  vim.api.nvim_set_current_win(win.winid)
   return win
 end
 
