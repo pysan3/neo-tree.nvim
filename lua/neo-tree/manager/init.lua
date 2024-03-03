@@ -581,9 +581,9 @@ function Manager.setup(user_config)
   local default_config = require("neo-tree.defaults")
   Manager.sync_user_config(user_config, default_config)
   local sources = user_config.sources or Manager.config.sources or {}
-  -- TODO: Remove me on real release.
+  -- TODO: Remove me on real release. This redirects filesystem config to filetree.
   if sources[1] ~= "filetree" or #sources ~= 1 then
-    log.warn("TESTING BRANCH. You've only got one source option: filetree.")
+    -- log.warn("TESTING BRANCH. You've only got one source option: filetree.")
     local index = 1
     for _, source in ipairs(sources) do
       if string.find(source, ".", nil, true) then -- External sources, I accept you.
@@ -605,10 +605,18 @@ function Manager.setup(user_config)
       local mod = require(info.module_path)
       ---@type NeotreeConfig.source_config
       local user_source_config = user_config[source_name] or {}
+      if not user_config[source_name] and source_name == "filetree" then
+        -- TODO: Remove me on real release. This redirects filesystem config to filetree.
+        user_source_config = user_config.filesystem or {}
+      end
       user_config.window = user_config.window or {}
       user_source_config.window = user_source_config.window or {}
       ---@type NeotreeConfig.source_config
       local default_source_config = default_config[source_name] or {} ---@diagnostic disable-line
+      if not default_config[source_name] and source_name == "filetree" then
+        -- TODO: Remove me on real release. This redirects filesystem config to filetree.
+        default_source_config = default_config.filesystem or {}
+      end
       info.source_config = {
         name = mod.name,
         display_name = user_source_config.display_name or mod.display_name,
