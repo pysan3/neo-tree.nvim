@@ -451,7 +451,7 @@ function Manager:close_win(posid, force_unmount)
     if self.global_position_state[posid] == state_id then
       self.global_position_state[posid] = nil
     end
-    if force_unmount then
+    if force_unmount or vim.api.nvim_buf_is_valid(window.bufnr or -1) then
       window:unmount() ---@diagnostic disable-line -- lua_ls cannot correctly detect interfaces.
       self.window_lookup[posid] = nil
       self.__window_lookup_cache[window.winid or -1] = nil

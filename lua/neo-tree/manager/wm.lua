@@ -51,6 +51,9 @@ M.create_floating_window = function(window_config, default_opts, name)
     utils.resolve_config_option(window_config, "popup.border", default_opts.border or {})
 
   local win = require("nui.popup")(default_opts)
+  win:on("BufUnload", function()
+    win:unmount()
+  end, { once = true })
   return win
 end
 ---Return a window for neo-tree in `position`. Returns winid.
