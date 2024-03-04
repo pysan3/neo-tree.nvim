@@ -122,10 +122,16 @@ Current code is very hacky.
 
 - [ ] Revisit this and implement it a bit cleaner.
 - [ ] Back port <https://github.com/nvim-neo-tree/neo-tree.nvim/pull/1355>
+- [ ] Back port <https://github.com/nvim-neo-tree/neo-tree.nvim/pull/1377>
+  - [ ] this moves cursor when there's empty line below the tree.
 
 Implement some kind of session save / restore mechanism that is able to survive across different nvim sessions.
 
 - [ ] <https://github.com/nvim-neo-tree/neo-tree.nvim/pull/1366#issuecomment-1968943373>
+
+We now have an upstream issue that `nvim_buf_set_lines` (used inside `NuiTree:render()`) changes the cursor position. My version of `renderer.position.restore()` does force the cursor to the correct position but there's a noticeable flash before restore kicks in.
+
+- <https://github.com/neovim/neovim/issues/27720>
 
 ## ✅ Keybinds
 
