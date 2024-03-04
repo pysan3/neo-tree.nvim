@@ -197,7 +197,7 @@ function Manager:navigate(args)
   state.current_position = args.position
   state.scope = args.scope
   local posid = locals.get_posid(args.position)
-  if args.action == "close" or (args.toggle and self.window_lookup[posid]) then
+  if args.action == "close" or (args.toggle and self:window_exists(state.id)) then
     return self:close_win(posid)
   end
   log.time_it("command argparse done.")
