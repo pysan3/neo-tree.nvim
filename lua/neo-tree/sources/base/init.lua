@@ -129,7 +129,7 @@ function Source:navigate(dir, path_to_reveal, window_width, manager, failed_args
     self.bufnr = vim.api.nvim_create_buf(false, false)
   end
   local items = {} -- fill in the items here.
-  self:show_nodes(items, self.tree, nil, self.config.group_empty_dirs and Path.sep_str or nil)
+  self:show_nodes(items, self.tree, nil, nil)
   if path_to_reveal then
     self:focus_node(path_to_reveal:tostring())
   end

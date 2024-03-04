@@ -190,9 +190,8 @@ function Filetree:navigate(dir, path_to_reveal, window_width, manager, failed_ar
   log.time_it("start filetree:navigate")
   self:wait_all_tasks()
   log.time_it("all_tasks finished")
-  -- TODO: local group_with = self.config.group_empty_dirs and Path.sep_str or nil
-  -- local request_window_width = self:show_nodes(nil, self.tree, nil, group_with)
-  self:show_nodes(nil, self.tree, nil, nil)
+  local group_with = self.config.group_empty_dirs and Path.sep_str or nil
+  self:show_nodes(nil, self.tree, nil, group_with)
   nio.wait(nio.run(function()
     self:redraw(manager, window_width)
   end, function(success, err)
@@ -388,6 +387,9 @@ function locals.skipfun_scan_deep(filtered_items_config, fallback)
   return {
     depth = nil,
     skip_dir = function(dir)
+      if not fallback(dir) then
+        return false
+      end
       for child in dir:fs_iterdir(false, 1) do
         local name = child:basename()
         if
@@ -402,7 +404,6 @@ function locals.skipfun_scan_deep(filtered_items_config, fallback)
           return true
         end
       end
-      return fallback(dir)
     end,
   }
 end

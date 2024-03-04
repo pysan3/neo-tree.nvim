@@ -204,14 +204,6 @@ function Manager:navigate(args)
   self:open_state(state, args.position, Path(args.dir), args.reveal_file and Path(args.reveal_file))
 end
 
-function locals.calculate_default_scope(position)
-  if vim.tbl_contains(e.valid_phantom_window_positions, position) then
-    return e.state_scopes.WINDOW
-  else
-    return e.state_scopes.TABPAGE
-  end
-end
-
 ---Navigate to state (calls state:navigate).
 ---@param state NeotreeState
 ---@param position NeotreeWindowPosition
@@ -713,6 +705,32 @@ function Manager.setup(user_config)
   return vim.tbl_keys(Manager.source_lookup)
 end
 
+function Manager:shutdown()
+  local id_prefix = {
+    "__neo_tree_internal_tab_enter_",
+    "__neo_tree_internal_win_leave_",
+    "__neo_tree_internal_buf_win_enter_",
+  }
+  for _, prefix in ipairs(id_prefix) do
+    events.unsubscribe({
+      id = prefix .. self.tabid,
+    })
+  end
+  self.cache[self.tabid] = nil
+end
+
+function Manager.wait_all_tasks()
+  -- Block exec until other setups is completed
+  local done = nio.wait_all(Manager.global_tasks, Manager.global_tasks.done + 1)
+  if done > Manager.global_tasks.done then
+    Manager.global_tasks.done = done
+  end
+end
+
+--          ╭─────────────────────────────────────────────────────────╮
+--          │                         Events                          │
+--          ╰─────────────────────────────────────────────────────────╯
+
 function Manager:on_buf_win_enter()
   local current_winid = vim.api.nvim_get_current_win()
   local posid = self:search_win_by_winid(current_winid)
@@ -773,19 +791,9 @@ function Manager:on_win_leave()
   end
 end
 
-function Manager:shutdown()
-  local id_prefix = {
-    "__neo_tree_internal_tab_enter_",
-    "__neo_tree_internal_win_leave_",
-    "__neo_tree_internal_buf_win_enter_",
-  }
-  for _, prefix in ipairs(id_prefix) do
-    events.unsubscribe({
-      id = prefix .. self.tabid,
-    })
-  end
-  self.cache[self.tabid] = nil
-end
+--          ╭─────────────────────────────────────────────────────────╮
+--          │                Locals: Get / Set Sources                │
+--          ╰─────────────────────────────────────────────────────────╯
 
 ---Check if external module is a valid neo-tree source
 ---@param module_path string # path to require
@@ -832,21 +840,6 @@ function Manager.set_sources(sources)
   return Manager.source_lookup
 end
 
----Merge render component definition.
----Values in later arguments are more prioritized, just like `vim.tbl_expand("force")`.
----@param default NeotreeConfig.components
----@param ... NeotreeConfig.components
----@return NeotreeConfig.components
-function locals.merge_components(default, ...)
-  local components = vim.tbl_deep_extend("force", default, ...)
-  for key, _ in pairs(components) do
-    if not default[key] then
-      components[key] = nil
-    end
-  end
-  return components
-end
-
 ---Return the path of current buffer if it is a _real file_ that can be followed.
 ---@param include_terminals boolean|nil
 ---@return string|nil path_to_reveal
@@ -867,6 +860,33 @@ function Manager:get_path_to_reveal(include_terminals)
     return nil
   end
   return path
+end
+
+function locals.calculate_default_scope(position)
+  if vim.tbl_contains(e.valid_phantom_window_positions, position) then
+    return e.state_scopes.WINDOW
+  else
+    return e.state_scopes.TABPAGE
+  end
+end
+
+--          ╭─────────────────────────────────────────────────────────╮
+--          │         Locals: Merge Config (used in `setup`)          │
+--          ╰─────────────────────────────────────────────────────────╯
+
+---Merge render component definition.
+---Values in later arguments are more prioritized, just like `vim.tbl_expand("force")`.
+---@param default NeotreeConfig.components
+---@param ... NeotreeConfig.components
+---@return NeotreeConfig.components
+function locals.merge_components(default, ...)
+  local components = vim.tbl_deep_extend("force", default, ...)
+  for key, _ in pairs(components) do
+    if not default[key] then
+      components[key] = nil
+    end
+  end
+  return components
 end
 
 ---Merge renderers from config and insert default keys for each component
@@ -1028,14 +1048,6 @@ function locals.set_keymaps(window, state)
       end
       window:map("v", lhs, cb, opts)
     end
-  end
-end
-
-function Manager.wait_all_tasks()
-  -- Block exec until other setups is completed
-  local done = nio.wait_all(Manager.global_tasks, Manager.global_tasks.done + 1)
-  if done > Manager.global_tasks.done then
-    Manager.global_tasks.done = done
   end
 end
 
