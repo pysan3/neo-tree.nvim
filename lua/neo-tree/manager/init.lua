@@ -734,7 +734,10 @@ end
 function Manager:on_buf_win_enter()
   local current_winid = vim.api.nvim_get_current_win()
   local posid = self:search_win_by_winid(current_winid)
-  if posid and vim.tbl_contains(e.valid_float_window_positions, posid) then
+  if
+    utils.is_floating(current_winid)
+    or posid and vim.tbl_contains(e.valid_float_window_positions, posid)
+  then
     return
   else
     self:close_win(e.valid_window_positions.FLOAT)
