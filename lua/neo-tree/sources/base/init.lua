@@ -112,6 +112,10 @@ function Source:free_mem()
   end
 end
 
+--          ╭─────────────────────────────────────────────────────────╮
+--          │                 Draw and Navigate Tree                  │
+--          ╰─────────────────────────────────────────────────────────╯
+
 ---Prepare for render. And write to buffer.
 ---@param dir PathlibPath # Directory to work with. Mostly `cwd`.
 ---@param path_to_reveal PathlibPath|nil # Reveal and focus on this file on startup.
@@ -189,86 +193,6 @@ function Source:redraw(manager, window_width, curpos)
       return acquired and self._tree_lock.release()
     end
   )
-end
-
----Try to focus node with `node_id`.
----@param node_id string|nil # If nil, does nothing.
-function Source:focus_node(node_id)
-  if node_id == nil then
-    return
-  end
-  if not vim.startswith(node_id, self.dir:tostring()) then
-    return nil
-  end
-  self:modify_tree(function(tree)
-    local node, linenr = self.tree:get_node(node_id)
-    if node and not linenr then
-      locals.expand_to_node(tree, node)
-      self.focused_node = node_id
-    end
-  end)
-  self.focused_node = node_id
-end
-
-function locals.expand_to_node(tree, node)
-  if node == nil then
-    return
-  end
-  local parent_id = node:get_parent_id()
-  if parent_id then
-    local parent = tree:get_node(parent_id)
-    locals.expand_to_node(tree, parent)
-    parent:expand()
-  end
-end
-
----Assign `source_items` to `tree` and render at `self.bufnr`.
----@param source_items NeotreeSourceItem[]|nil # If all are NuiNodes already, uses them directly.
----@param tree NuiTree
----@param parent_id string|nil # Insert items as children of this parent. If nil, inserts to root.
----Separator to compose nodes into one line if node has exactly one child.
----If nil, does not group dirs.
----@param group_empty_with string|nil
----@return integer request_window_width
-function Source:show_nodes(source_items, tree, parent_id, group_empty_with)
-  local parent_level = 0 -- default when `parent_id` is not found.
-  if parent_id then
-    local suc, parent = pcall(tree.get_node, tree, parent_id)
-    if suc and parent then
-      parent_level = parent:get_depth()
-    end
-  end
-  local visibility = {}
-  -- HACK: Special code to work with filesystem source, and keep backwards compatibility.
-  ---@diagnostic disable start
-  if self.config.filtered_items then
-    visibility.all_files = self.config.filtered_items.visible
-    visibility.in_empty_folder = self.config.filtered_items.force_visible_in_empty_folder
-  end
-  ---@diagnostic disable end
-  local expanded_node_ids = locals.get_node_id_list(tree, parent_id, function(node)
-    return node:is_expanded()
-  end)
-  -- draw the given nodes
-  if source_items and #source_items > 0 then
-    local nodes = locals.convert(source_items, visibility, parent_level, group_empty_with)
-    local success, msg = pcall(tree.set_nodes, tree, nodes, parent_id)
-    if not success then
-      log.error("Error setting nodes: ", msg)
-      log.error(vim.inspect(tree:get_nodes()))
-    end
-  end
-  for _, node_id in ipairs(expanded_node_ids) do
-    local node = tree:get_node(node_id)
-    if node then
-      node:expand()
-    end
-  end
-  -- Always expand top level
-  for _, node in ipairs(tree:get_nodes(parent_id)) do
-    node.loaded = true
-    node:expand()
-  end
 end
 
 ---Render tree to `self.bufnr`
@@ -376,6 +300,72 @@ function Source:prepare_node(item)
   return line
 end
 
+---Assign `source_items` to `tree` and render at `self.bufnr`.
+---@param source_items NeotreeSourceItem[]|nil # If all are NuiNodes already, uses them directly.
+---@param tree NuiTree
+---@param parent_id string|nil # Insert items as children of this parent. If nil, inserts to root.
+---Separator to compose nodes into one line if node has exactly one child.
+---If nil, does not group dirs.
+---@param group_empty_with string|nil
+---@return integer request_window_width
+function Source:show_nodes(source_items, tree, parent_id, group_empty_with)
+  local parent_level = 0 -- default when `parent_id` is not found.
+  if parent_id then
+    local suc, parent = pcall(tree.get_node, tree, parent_id)
+    if suc and parent then
+      parent_level = parent:get_depth()
+    end
+  end
+  local visibility = {}
+  -- HACK: Special code to work with filesystem source, and keep backwards compatibility.
+  ---@diagnostic disable start
+  if self.config.filtered_items then
+    visibility.all_files = self.config.filtered_items.visible
+    visibility.in_empty_folder = self.config.filtered_items.force_visible_in_empty_folder
+  end
+  ---@diagnostic disable end
+  local expanded_node_ids = locals.get_node_id_list(tree, parent_id, function(node)
+    return node:is_expanded()
+  end)
+  -- draw the given nodes
+  if source_items and #source_items > 0 then
+    local nodes = locals.convert(source_items, visibility, parent_level, group_empty_with)
+    local success, msg = pcall(tree.set_nodes, tree, nodes, parent_id)
+    if not success then
+      log.error("Error setting nodes: ", msg)
+      log.error(vim.inspect(tree:get_nodes()))
+    end
+  end
+  for _, node_id in ipairs(expanded_node_ids) do
+    local node = tree:get_node(node_id)
+    if node then
+      node:expand()
+    end
+  end
+  -- Always expand top level
+  for _, node in ipairs(tree:get_nodes(parent_id)) do
+    node.loaded = true
+    node:expand()
+  end
+end
+
+function Source:start_cursor_monitor()
+  vim.api.nvim_create_autocmd("CursorMoved", {
+    once = true,
+    desc = "Neo-tree: monitor cursor movement from user.",
+    buffer = self.bufnr,
+    callback = function()
+      if vim.api.nvim_get_current_buf() == self.bufnr then
+        self.cursor_update_by_user = true
+      end
+    end,
+  })
+end
+
+--          ╭─────────────────────────────────────────────────────────╮
+--          │                       Modify Tree                       │
+--          ╰─────────────────────────────────────────────────────────╯
+
 ---Run callback with a mutex to `self.tree` so it is safe to modify.
 ---@param cb fun(tree: NuiTree)
 function Source:modify_tree(cb)
@@ -389,6 +379,37 @@ function Source:modify_tree(cb)
     error(unpack(result, 2))
   end
   return unpack(result, 2)
+end
+
+---Try to focus node with `node_id`.
+---@param node_id string|nil # If nil, does nothing.
+function Source:focus_node(node_id)
+  if node_id == nil then
+    return
+  end
+  if not vim.startswith(node_id, self.dir:tostring()) then
+    return nil
+  end
+  self:modify_tree(function(tree)
+    local node, linenr = self.tree:get_node(node_id)
+    if node and not linenr then
+      locals.expand_to_node(tree, node)
+      self.focused_node = node_id
+    end
+  end)
+  self.focused_node = node_id
+end
+
+function locals.expand_to_node(tree, node)
+  if node == nil then
+    return
+  end
+  local parent_id = node:get_parent_id()
+  if parent_id then
+    local parent = tree:get_node(parent_id)
+    locals.expand_to_node(tree, parent)
+    parent:expand()
+  end
 end
 
 ---Filter items and separate into 2 tables: `visible` and `hidden`.
@@ -421,6 +442,7 @@ end
 ---Return a list that contains all nodes in the tree recursively.
 -- WARNING: Don't forget to free the list afterwards, or it may lead to memory leaks.
 -- You may want to use `locals.get_node_id_list` instead.
+--
 ---@param tree NuiTree
 ---@param parent_id string|nil
 ---@param filter_func (fun(node: NuiTreeNode): boolean)|nil # Filter out node if this func returns false.
@@ -470,6 +492,10 @@ function locals.get_node_id_list(tree, parent_id, filter_func)
   end
   return res
 end
+
+--          ╭─────────────────────────────────────────────────────────╮
+--          │                         Locals                          │
+--          ╰─────────────────────────────────────────────────────────╯
 
 ---@param source_items NeotreeSourceItem[]|NuiTreeNode[]|nil
 ---@param visibility { all_files: boolean|nil, in_empty_folder: boolean|nil }
@@ -539,18 +565,9 @@ function locals.convert(source_items, visibility, level, group_with)
   return nodes
 end
 
-function Source:start_cursor_monitor()
-  vim.api.nvim_create_autocmd("CursorMoved", {
-    once = true,
-    desc = "Neo-tree: monitor cursor movement from user.",
-    buffer = self.bufnr,
-    callback = function()
-      if vim.api.nvim_get_current_buf() == self.bufnr then
-        self.cursor_update_by_user = true
-      end
-    end,
-  })
-end
+--          ╭─────────────────────────────────────────────────────────╮
+--          │                       Easy Debug                        │
+--          ╰─────────────────────────────────────────────────────────╯
 
 function Source:i_am_a_valid_source()
   -- `Source` is an example. All child classes will be valid neo-tree source
@@ -574,6 +591,10 @@ function Source:__debug_visualize_tree(id, indent)
     self:__debug_visualize_tree(node:get_id(), indent)
   end
 end
+
+--          ╭─────────────────────────────────────────────────────────╮
+--          │                     Task Management                     │
+--          ╰─────────────────────────────────────────────────────────╯
 
 ---@param func function # Function called as a nio task. Job will be captured to `batch_name` task list.
 ---@param batch_name string|nil # Unique name for batch. If nil, refers to global task list.
