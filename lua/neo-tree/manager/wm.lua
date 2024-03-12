@@ -98,6 +98,7 @@ function M.create_win(position, window_config, window_width, name, bufnr)
   elseif vim.tbl_contains(e.valid_float_window_positions, position) then
     return M.create_floating_window(window_config, opts, name)
   elseif vim.tbl_contains(e.valid_phantom_window_positions, position) then
+    opts.size = nil
     return require("neo-tree.manager.current")(opts)
   end
 end
