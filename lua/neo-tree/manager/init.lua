@@ -123,7 +123,10 @@ end
 ---@return NeotreeFixedPosition|NeotreeCurrentWinId
 function locals.get_posid(position, winid)
   if position == "current" then
-    return winid or vim.api.nvim_get_current_win()
+    if winid and vim.api.nvim_win_is_valid(winid) then
+      return winid
+    end
+    return vim.api.nvim_get_current_win()
   else
     return position
   end
@@ -253,7 +256,7 @@ function Manager:done(state, requested_window_width, requested_curpos)
   end
   self.previous_source = state.name
   self.previous_position[state.name] = position
-  local posid = locals.get_posid(position)
+  local posid = locals.get_posid(position, state.winid)
   local window = self:create_win(posid, position, state, requested_window_width, "TODO", false)
   local new_posid = locals.get_posid(position, window.winid)
   state.winid = window.winid
@@ -814,7 +817,8 @@ end
 function Manager:on_win_leave()
   if vim.api.nvim_get_current_tabpage() == self.tabid then
     local winid = vim.api.nvim_get_current_win()
-    if not utils.is_floating(winid) and not self:search_win_by_winid(winid) then
+    local posid = self:search_win_by_winid(winid)
+    if not utils.is_floating(winid) and not (posid and locals.pos_is_fixed(posid)) then
       self.previous_windows:append(winid)
     end
   end
