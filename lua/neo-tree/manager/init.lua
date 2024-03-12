@@ -576,14 +576,15 @@ function Manager.setup(user_config)
   -- TODO: Remove me on real release. This redirects filesystem config to filetree.
   if sources[1] ~= "filetree" or #sources ~= 1 then
     -- log.warn("TESTING BRANCH. You've only got one source option: filetree.")
-    local index = 1
-    for _, source in ipairs(sources) do
-      if string.find(source, ".", nil, true) then -- External sources, I accept you.
-        index = index + 1
-        sources[index] = source
-      end
-    end
-    sources[1] = "filetree"
+    sources = { "filetree" }
+    -- local index = 1
+    -- for _, source in ipairs(sources) do
+    --   if string.find(source, ".", nil, true) then -- External sources, I accept you.
+    --     index = index + 1
+    --     sources[index] = source
+    --   end
+    -- end
+    -- sources[1] = "filetree"
   end
   Manager.set_sources(sources)
   log.time_it("sources found: " .. vim.inspect(vim.tbl_keys(Manager.source_lookup)))
