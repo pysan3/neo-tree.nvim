@@ -11,13 +11,14 @@ local PathTree = require("neo-tree.sources.filetree.path_tree")
 local NuiTree = require("nui.tree")
 local NuiLine = require("nui.line")
 local highlights = require("neo-tree.ui.highlights")
-local ui_rndr = require("neo-tree.ui.renderer")
 local renderer = require("neo-tree.ui.renderer")
 
 ---@alias NeotreeStateId string
 
+---@alias NeotreeNodeId string
+
 ---@class NeotreeSourceItem
----@field id string|nil
+---@field id NeotreeNodeId|nil
 ---@field line NuiLine|nil
 ---@field name string|nil
 ---@field type string|nil
@@ -46,7 +47,9 @@ local locals = {} -- Functions exported for test purposes
 ---@field longest_node integer # Width required to show the longest node.
 ---@field in_pre_render boolean
 ---@field remaining_cols integer
----@field strict boolean
+---@field group_empty_with string|nil
+---@field visual_depth table<NeotreeNodeId, integer>
+---@field skipped_nodes table<NeotreeNodeId, string>
 
 ---@class NeotreeState
 ---@field id string # A unique id that represents this state instance.
@@ -161,7 +164,8 @@ function Source:redraw(manager, window_width, curpos)
       else
         log.time_it("no focus node")
       end
-      self:prepare_rendar_args(window_width, self.window.auto_expand_width)
+      local group_with = self.config.group_empty_dirs and Path.sep_str or nil
+      self:prepare_rendar_args(window_width, self.window.auto_expand_width, group_with)
       self._tree_lock.acquire()
       acquired = true
       log.time_it("tree mutex acquired")
@@ -240,11 +244,15 @@ end
 
 ---@param window_width integer # Default window width.
 ---@param do_pre_render boolean|nil # Whether to pre_render to find longest node for auto_expand.
-function Source:prepare_rendar_args(window_width, do_pre_render)
+---@param group_empty_with string|nil
+function Source:prepare_rendar_args(window_width, do_pre_render, group_empty_with)
   self.render_context = {
+    longest_node = window_width,
     in_pre_render = do_pre_render or false,
     remaining_cols = window_width,
-    longest_node = window_width,
+    group_empty_with = group_empty_with,
+    visual_depth = {},
+    skipped_nodes = {},
   }
 end
 
@@ -261,10 +269,24 @@ function Source:prepare_node(item)
       return nil
     end
   end
+  local parent_id = item:get_parent_id()
+  local parent_depth = parent_id and self.render_context.visual_depth[parent_id] or 0
+  if self.render_context.group_empty_with then
+    if item.type == "directory" and locals.node_group_with_dirs(self.tree, item:get_id()) then
+      self.render_context.visual_depth[item:get_id()] = parent_depth
+      local skipped_parents = self.render_context.skipped_nodes[parent_id] or ""
+      self.render_context.skipped_nodes[parent_id or ""] = nil
+      self.render_context.skipped_nodes[item:get_id()] = skipped_parents
+        .. item.name
+        .. self.render_context.group_empty_with
+      return nil
+    end
+  end
+  self.render_context.visual_depth[item:get_id()] = parent_depth + 1
   -- Generate line using `NeotreeComponent` in `self.renderers`.
   local line = NuiLine()
-  local renderer = self.config.renderers[item.type]
-  if not renderer then
+  local rndr = self.config.renderers[item.type]
+  if not rndr then
     line:append(item.type .. ": ", "Comment")
     line:append(item.name)
     return line
@@ -272,9 +294,9 @@ function Source:prepare_node(item)
   item.wanted_width = 0
   local remaining_cols = self.render_context.remaining_cols
   local should_pad = false
-  for _, component in ipairs(renderer) do
+  for _, component in ipairs(rndr) do
     if component.enabled ~= false then
-      local datas, wanted_width = ui_rndr.render_component(component, item, self, remaining_cols)
+      local datas, wanted_width = renderer.render_component(component, item, self, remaining_cols)
       if datas then
         local actual_width = 0
         for _, data in ipairs(datas) do
@@ -300,15 +322,55 @@ function Source:prepare_node(item)
   return line
 end
 
+---Check if node does not have any children or all children are `node.skip_node`.
+---@param tree NuiTree
+---@param node_id NeotreeNodeId
+function locals.node_is_empty(tree, node_id)
+  local node = tree:get_node(node_id)
+  if not node or not node:has_children() then
+    return true
+  end
+  local count = 0
+  for _, child in ipairs(tree:get_nodes(node_id)) do
+    if not child.skip_node then
+      if count > 0 then
+        return false
+      end
+      count = count + 1
+    end
+  end
+  return true
+end
+
+---Check if node has single child that is not `node.skip_node`, group_with_dirs.
+---@param tree NuiTree
+---@param node_id NeotreeNodeId
+function locals.node_group_with_dirs(tree, node_id)
+  local node = tree:get_node(node_id)
+  if not node or not node:has_children() then
+    return false
+  end
+  local count, is_dir = 0, false
+  for _, child in ipairs(tree:get_nodes(node_id)) do
+    if not child.skip_node then
+      count = count + 1
+      is_dir = child.type == "directory"
+      if count > 1 then
+        return false
+      end
+    end
+  end
+  return count == 1 and is_dir
+end
+
 ---Assign `source_items` to `tree` and render at `self.bufnr`.
 ---@param source_items NeotreeSourceItem[]|nil # If all are NuiNodes already, uses them directly.
 ---@param tree NuiTree
 ---@param parent_id string|nil # Insert items as children of this parent. If nil, inserts to root.
 ---Separator to compose nodes into one line if node has exactly one child.
 ---If nil, does not group dirs.
----@param group_empty_with string|nil
 ---@return integer request_window_width
-function Source:show_nodes(source_items, tree, parent_id, group_empty_with)
+function Source:show_nodes(source_items, tree, parent_id)
   local parent_level = 0 -- default when `parent_id` is not found.
   if parent_id then
     local suc, parent = pcall(tree.get_node, tree, parent_id)
@@ -329,7 +391,7 @@ function Source:show_nodes(source_items, tree, parent_id, group_empty_with)
   end)
   -- draw the given nodes
   if source_items and #source_items > 0 then
-    local nodes = locals.convert(source_items, visibility, parent_level, group_empty_with)
+    local nodes = locals.convert(source_items, visibility, parent_level)
     local success, msg = pcall(tree.set_nodes, tree, nodes, parent_id)
     if not success then
       log.error("Error setting nodes: ", msg)
@@ -446,6 +508,35 @@ end
 ---@param tree NuiTree
 ---@param parent_id string|nil
 ---@param filter_func (fun(node: NuiTreeNode): boolean)|nil # Filter out node if this func returns false.
+function locals.get_node_table(tree, parent_id, filter_func)
+  ---@type table<string, NuiTreeNode>
+  local result = {}
+  local queue = tree:get_nodes(parent_id)
+  local index, max_index = 1, #queue
+  while index <= max_index do
+    local node = queue[index]
+    result[node:get_id()] = node
+    if node:has_children() then
+      local children = tree:get_nodes(queue[index])
+      for i, child in ipairs(children) do
+        if not filter_func or filter_func(child) then
+          max_index = max_index + 1
+          queue[max_index] = child
+        end
+      end
+    end
+    index = index + 1
+  end
+  return result
+end
+
+---Return a list that contains all nodes in the tree recursively.
+-- WARNING: Don't forget to free the list afterwards, or it may lead to memory leaks.
+-- You may want to use `locals.get_node_id_list` instead.
+--
+---@param tree NuiTree
+---@param parent_id string|nil
+---@param filter_func (fun(node: NuiTreeNode): boolean)|nil # Filter out node if this func returns false.
 function locals.get_node_list(tree, parent_id, filter_func)
   ---@type NuiTreeNode[]
   local nodes = tree:get_nodes(parent_id)
@@ -453,9 +544,9 @@ function locals.get_node_list(tree, parent_id, filter_func)
   while index <= max_index do
     local node = nodes[index]
     if node:has_children() then
-      local children = tree:get_nodes(nodes[index])
+      local children = tree:get_nodes(node:get_id())
       for i, child in ipairs(children) do
-        if filter_func and filter_func(child) then
+        if not filter_func or filter_func(child) then
           max_index = max_index + 1
           nodes[max_index] = child
         end
@@ -480,9 +571,9 @@ function locals.get_node_id_list(tree, parent_id, filter_func)
     local node = nodes[index]
     res[index] = node:get_id()
     if node:has_children() then
-      local children = tree:get_nodes(nodes[index])
+      local children = tree:get_nodes(node:get_id())
       for i, child in ipairs(children) do
-        if filter_func and filter_func(child) then
+        if not filter_func or filter_func(child) then
           max_index = max_index + 1
           nodes[max_index] = child
         end
@@ -502,9 +593,8 @@ end
 ---@param level integer # Node depth from root (=1).
 ---Separator to compose nodes into one line if node has exactly one child.
 ---If nil, does not group dirs.
----@param group_empty_with string|nil
 ---@deprecated TODO: Move this function to a proper location (eg utils).
-function locals.convert(source_items, visibility, level, group_with)
+function locals.convert(source_items, visibility, level)
   if not source_items then
     return source_items
   end
@@ -541,14 +631,14 @@ function locals.convert(source_items, visibility, level, group_with)
         search_pattern = item.search_pattern,
         level = level,
       }
-      local children = locals.convert(item.children, visibility, level + 1, group_with)
+      local children = locals.convert(item.children, visibility, level + 1)
       -- Group empty dirs
       -- This code is simple since node is not registered to the tree yet.
-      if group_with and children and #children == 1 and children[1].type == "directory" then
-        nodeData = children[1]
-        nodeData.name = item.name .. group_with .. children[1].name
-        children = nil
-      end
+      -- if group_with and children and #children == 1 and children[1].type == "directory" then
+      --   nodeData = children[1]
+      --   nodeData.name = item.name .. group_with .. children[1].name
+      --   children = nil
+      -- end
       item = NuiTree.Node(nodeData, children)
     end
     ---@cast item NuiTreeNode
@@ -583,10 +673,12 @@ function Source:__debug_visualize_tree(id, indent)
       return bool and " true" or "false"
     end
     if g then
+      local st = g.state or {}
       local is_set = g.is_ready and g.is_ready.is_set()
       local msg = "set: %s, ignored: %s, state: (c: %s, s: %s)"
-      local x = msg:format(tf(is_set), tf(g.ignored), g.state.change, g.state.status)
-      print(string.rep(" ", (node:get_depth() + 1) * (indent or 2)) .. x)
+      local x = msg:format(tf(is_set), tf(g.ignored), st.change, st.status)
+      local skip = node.skip_node and "(skip)" or ""
+      print(string.rep(" ", (node:get_depth() + 1) * (indent or 2)) .. x .. skip)
     end
     self:__debug_visualize_tree(node:get_id(), indent)
   end
@@ -676,4 +768,5 @@ function Source:assign_future_redraw(future)
   end
 end
 
-return Source, locals
+Source.__locals = locals
+return Source

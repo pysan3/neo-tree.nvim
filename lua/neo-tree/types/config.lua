@@ -196,8 +196,8 @@
 ---|"never"  # means directory scans are never async.
 
 ---@alias NeotreeConfig.filesystem.scan_mode
----|"shallow" # Don't scan into directories to detect possible empty directory a priori
----|"deep"    # Scan into directories to detect empty or grouped empty directories a priori.
+---|"shallow" # Don't scan into directories to detect possible empty directory.
+---|"deep"    # Scan into directories to detect empty or grouped empty directories.
 
 ---@class NeotreeConfig.filesystem.cwd_target
 ---@field sidebar string|nil ("tab") sidebar is when position = left or right

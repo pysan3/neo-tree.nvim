@@ -424,6 +424,12 @@ end
 M.name = function(config, node, state)
   local highlight = config.highlight or highlights.FILE_NAME
   local text = node.name
+  local parent_id = node:get_parent_id()
+  local skipped_parents = parent_id and state.render_context.skipped_nodes[parent_id]
+  if parent_id and skipped_parents then
+    text = skipped_parents .. text
+    state.render_context.skipped_nodes[parent_id] = nil
+  end
   if node.type == "directory" then
     highlight = highlights.DIRECTORY_NAME
     if config.trailing_slash and text ~= "/" then
@@ -466,6 +472,8 @@ M.name = function(config, node, state)
 end
 
 ---@param config NeotreeComponent.indent
+---@param node NuiTreeNode|NeotreeSourceItem
+---@param state NeotreeState
 M.indent = function(config, node, state)
   if not state.skip_marker_at_level then
     state.skip_marker_at_level = {}
@@ -474,7 +482,7 @@ M.indent = function(config, node, state)
   local skip_marker = state.skip_marker_at_level
   local indent_size = config.indent_size or 2
   local padding = config.padding or 0
-  local level = node.level
+  local level = state.render_context.visual_depth[node:get_id()]
   local with_markers = config.with_markers
   local with_expanders = config.with_expanders == nil and file_nesting.is_enabled()
     or config.with_expanders

@@ -59,25 +59,39 @@ function M.create(func, argc)
   end
 end
 
+---Create new nio.process and run it.
+---@param cmd string
+---@param args string[]
+---@return nio.process.Process|nil
+---@return string|nil Error
+---@overload fun(cmd: string[]): (nio.process.Process|nil, string|nil) # Pass cmd[1] and args = unpack(cmd, 2) instead.
+function M.new_process(cmd, args)
+  if not M.check_nio_install() then
+    return nil, "nio not installed"
+  end
+  if type(cmd) == "string" then
+    return M.nio.process.run({
+      cmd = cmd,
+      args = args,
+    })
+  else
+    local _cmd = table.remove(cmd, 1)
+    return M.nio.process.run({
+      cmd = _cmd,
+      args = cmd,
+    })
+  end
+end
+
 function M.execute_command(cmd, input)
-  local process, err_msg = M.nio.process.run({
-    cmd = cmd[1],
-    args = { unpack(cmd, 2) },
-  })
+  local process, err_msg = M.new_process(cmd)
   if not process then
     return false, { err_msg }
   end
   for i, value in ipairs(input or {}) do
     local err = process.stdin.write(value .. "\n")
-    assert(
-      not err,
-      ([[ERROR cmd: '%s', input(%s): '%s', error: %s]]):format(
-        table.concat(cmd, " "),
-        i,
-        value,
-        err
-      )
-    )
+    local msg = [[ERROR cmd: '%s', input(%s): '%s', error: %s]]
+    assert(not err, string.format(msg, table.concat(cmd, " "), i, value, err))
   end
   process.stdin.close()
   if process.result() == 0 then
@@ -85,6 +99,40 @@ function M.execute_command(cmd, input)
   else
     return false, {}
   end
+end
+
+---Execute a command and return an iterable that returns each line of stdout.
+---@param process nio.process.Process
+---@param input string[]|nil # Lines written to stdin. Each item will be appended with a '\n'.
+---@param chunk_size integer|nil # Number of bytes to fetch on each batch.
+---@return fun(): string|nil # Iterator
+function M.execute_and_readlines(process, input, chunk_size)
+  chunk_size = chunk_size or 100
+  for i, value in ipairs(input or {}) do
+    local err = process.stdin.write(value .. "\n")
+    local msg = [[ERROR input(%s): '%s', error: %s]]
+    assert(not err, string.format(msg, i, value, err))
+  end
+  process.stdin.close()
+  local buffer = ""
+  local function get_one_line()
+    local cr = string.find(buffer, "\n")
+    if not cr then
+      repeat
+        local out = process.stdout.read(chunk_size)
+        if not out or #out == 0 then
+          process.stdout.close()
+          return nil
+        end
+        buffer = buffer .. out
+      until string.find(buffer, "\n") ~= nil
+      return get_one_line()
+    end
+    local result = buffer:sub(1, cr - 1)
+    buffer = buffer:sub(cr + 1)
+    return result
+  end
+  return get_one_line
 end
 
 ---Wait all tasks in `array`

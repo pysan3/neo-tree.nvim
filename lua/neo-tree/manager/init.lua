@@ -144,6 +144,10 @@ function locals.pos_is_fixed(posid)
   return type(posid) == "string" and posid ~= "current"
 end
 
+--          ╭─────────────────────────────────────────────────────────╮
+--          │                   Navigate and Redraw                   │
+--          ╰─────────────────────────────────────────────────────────╯
+
 ---Redraw the tree without relaoding from the source.
 ---@param state NeotreeState
 ---@param curpos NeotreeCursorPos|nil # Set cursor position. (row, col)
@@ -299,6 +303,10 @@ function Manager:fail(reason, new_state_id, old_state, dir, path_to_reveal, wind
   return new_state:navigate(dir, path_to_reveal, window_width, self, args)
 end
 
+--          ╭─────────────────────────────────────────────────────────╮
+--          │                      Search State                       │
+--          ╰─────────────────────────────────────────────────────────╯
+
 ---Fetch appropriate state based on args and tabid.
 ---@param source_name NeotreeSourceName
 ---@param args NeotreeManagerSearchArgs
@@ -451,7 +459,14 @@ function Manager:close_win(posid, force_unmount)
     if self.global_position_state[posid] == state_id then
       self.global_position_state[posid] = nil
     end
-    if force_unmount or vim.api.nvim_buf_is_valid(window.bufnr or -1) then
+    local target_window, _ = self:get_appropriate_window()
+    if window.winid and window.winid == target_window then
+      -- cannot close last window, so make a split first
+      local new_split = vim.api.nvim_open_win(0, false, { split = "left", win = 0 })
+      self.previous_windows:append(new_split)
+      force_unmount = true
+    end
+    if force_unmount or not vim.api.nvim_buf_is_valid(window.bufnr or -1) then
       window:unmount() ---@diagnostic disable-line -- lua_ls cannot correctly detect interfaces.
       self.window_lookup[posid] = nil
       self.__window_lookup_cache[window.winid or -1] = nil
@@ -758,11 +773,14 @@ function Manager:on_buf_win_enter()
   end
   log.timer_start("on_buf_win_enter")
   local state = self:get_state(self.position_state[posid])
-  local target_window, is_neo_tree_window = self:get_appropriate_window(state)
-  log.time_it("state:", state.id, target_window, is_neo_tree_window)
+  local target_window, is_neo_tree_window = self:get_appropriate_window()
   if not is_neo_tree_window and target_window ~= current_winid then
     log.time_it("target is not a neo-tree window. sending buffer to ", target_window)
-    vim.api.nvim_win_set_buf(current_winid, state.bufnr)
+    if state then
+      vim.api.nvim_win_set_buf(current_winid, state.bufnr)
+    else
+      self:close_win(posid, true)
+    end
     vim.api.nvim_win_set_buf(target_window, bufnr)
     vim.api.nvim_set_current_win(target_window)
     return
@@ -772,7 +790,9 @@ function Manager:on_buf_win_enter()
   vim.cmd.sbuffer(bufnr)
   window.bufnr = nil
   self:close_win(posid, true)
-  self:done(state)
+  if state then
+    self:done(state)
+  end
 end
 
 function Manager:on_tab_enter()
@@ -954,6 +974,7 @@ function locals.fix_and_merge_mappings(commands, default_map_opts, default, ...)
       end
       opts.command = opts.command or opts[1]
       opts.func = opts.func or commands[opts.command]
+      opts.command = opts.command or "<lua-function>"
       opts.vfunc = opts.vfunc or commands[opts.command .. "_visual"]
       opts.desc = opts.desc or opts.command
       opts.text = opts.desc or opts.command

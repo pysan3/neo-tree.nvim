@@ -8,11 +8,11 @@ local renderer = require("neo-tree.ui.renderer")
 local events = require("neo-tree.events")
 local log = require("neo-tree.log")
 local git = require("neo-tree.git")
-local glob = require("neo-tree.sources.filesystem.lib.globtopattern")
 local PathTree = require("neo-tree.sources.filetree.path_tree")
 local NuiTree = require("nui.tree")
+local Source = require("neo-tree.sources.base")
 
-local locals = {} -- Functions exported for test purposes
+local locals = vim.deepcopy(Source.__locals) -- Functions exported for test purposes
 
 ---@class NeotreeFiletree : NeotreeState
 ---@field config NeotreeConfig.filesystem
@@ -190,8 +190,7 @@ function Filetree:navigate(dir, path_to_reveal, window_width, manager, failed_ar
   log.time_it("start filetree:navigate")
   self:wait_all_tasks()
   log.time_it("all_tasks finished")
-  local group_with = self.config.group_empty_dirs and Path.sep_str or nil
-  self:show_nodes(nil, self.tree, nil, group_with)
+  self:show_nodes(nil, self.tree, nil)
   nio.wait(nio.run(function()
     self:redraw(manager, window_width)
   end, function(success, err)
@@ -580,6 +579,7 @@ end
 ---Optimize filtered items
 ---@param filtered_items NeotreeConfig.filesystem.filtered_items
 function locals.purify_filtered_items(filtered_items)
+  local glob = require("neo-tree.sources.filesystem.lib.globtopattern")
   ---@type any
   local res = filtered_items
   ---@cast res NeotreeConfig.filesystem.filtered_items_optimized
@@ -601,4 +601,5 @@ function locals.purify_filtered_items(filtered_items)
   return res
 end
 
-return Filetree, locals
+Filetree.__locals = locals
+return Filetree
