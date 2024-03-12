@@ -32,7 +32,8 @@ local refresh_debounced = function(args)
 end
 
 ---Internal function to follow the cursor
-local follow_symbol = function()
+---@param follow_cursor_mode boolean|nil # if true, collapse out-of-scope nodes and auto focus current node.
+local follow_symbol = function(follow_cursor_mode)
   local state = get_state()
   if state.lsp_bufnr ~= vim.api.nvim_get_current_buf() then
     return
@@ -40,6 +41,16 @@ local follow_symbol = function()
   local cursor = vim.api.nvim_win_get_cursor(state.lsp_winid)
   local node_id = symbols.get_symbol_by_loc(state.tree, { cursor[1] - 1, cursor[2] })
   if #node_id > 0 then
+    if follow_cursor_mode then
+      renderer.collapse_all_nodes(state.tree)
+      local node = state.tree:get_node(node_id)
+      if node and node:has_children() and not node:is_expanded() then
+        node:expand()
+        if renderer.window_exists(state) then
+          renderer.expand_to_node(state, node_id)
+        end
+      end
+    end
     renderer.focus_node(state, node_id, true)
   end
 end
@@ -52,7 +63,7 @@ local follow_debounced = function(args)
   end
   utils.debounce(
     "document_symbols_follow",
-    utils.wrap(follow_symbol, args.afile),
+    utils.wrap(follow_symbol, true),
     100,
     utils.debounce_strategy.CALL_LAST_ONLY
   )
