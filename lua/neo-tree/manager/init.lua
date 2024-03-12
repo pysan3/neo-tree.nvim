@@ -972,9 +972,8 @@ function locals.fix_and_merge_mappings(commands, default_map_opts, default, ...)
         opts.func = rhs
         opts.desc = "<function>"
       end
-      opts.command = opts.command or opts[1]
+      opts.command = opts.command or opts[1] or (opts.func and "<lua-function>")
       opts.func = opts.func or commands[opts.command]
-      opts.command = opts.command or "<lua-function>"
       opts.vfunc = opts.vfunc or commands[opts.command .. "_visual"]
       opts.desc = opts.desc or opts.command
       opts.text = opts.desc or opts.command
