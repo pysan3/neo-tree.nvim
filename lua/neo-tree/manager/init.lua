@@ -460,16 +460,18 @@ function Manager:close_win(posid, force_unmount)
       self.global_position_state[posid] = nil
     end
     local target_window, _ = self:get_appropriate_window()
-    if window.winid and window.winid == target_window then
+    if window.winid and window.winid == target_window and locals.pos_is_fixed(posid) then
       -- cannot close last window, so make a split first
       local new_split = vim.api.nvim_open_win(0, false, { split = "left", win = 0 })
       self.previous_windows:append(new_split)
       force_unmount = true
     end
-    if force_unmount or not vim.api.nvim_buf_is_valid(window.bufnr or -1) then
+    if force_unmount then
       window:unmount() ---@diagnostic disable-line -- lua_ls cannot correctly detect interfaces.
       self.window_lookup[posid] = nil
       self.__window_lookup_cache[window.winid or -1] = nil
+    elseif not locals.pos_is_fixed(posid) or not vim.api.nvim_buf_is_valid(window.bufnr) then
+      return self:close_win(posid, true)
     else
       window:hide() ---@diagnostic disable-line -- lua_ls cannot correctly detect interfaces.
     end
@@ -757,7 +759,7 @@ function Manager:on_buf_win_enter()
     return
   else
     self:close_win(e.valid_window_positions.FLOAT)
-    if not posid or not locals.pos_is_fixed(posid) then
+    if not posid then
       return
     end
   end
@@ -766,6 +768,9 @@ function Manager:on_buf_win_enter()
   if window and window.bufnr == bufnr then
     log.time_it("window is neo-tree", bufnr, posid, window and window.bufnr)
     return
+  elseif window and not locals.pos_is_fixed(posid) then
+    log.time_it("was neo-tree-current but lost focus:", posid)
+    return self:close_win(posid, true)
   end
   if vim.bo.filetype == "neo-tree" or vim.bo.filetype == "neo-tree-popup" then
     log.time_it("new neo-tree window", bufnr, window and window.bufnr)
