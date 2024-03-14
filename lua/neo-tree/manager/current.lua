@@ -26,6 +26,7 @@ function M:_close_window()
   if not self.winid then
     return
   end
+  vim.cmd("bn")
 
   self.winid = nil
 end
@@ -36,6 +37,9 @@ function M:_buf_destroy()
       utils._.clear_namespace(self.bufnr, self.ns_id)
 
       if not self._.pending_quit then
+        if self.bufnr == vim.api.nvim_get_current_buf() then
+          vim.cmd("bn")
+        end
         vim.api.nvim_buf_delete(self.bufnr, { force = true })
       end
     end
