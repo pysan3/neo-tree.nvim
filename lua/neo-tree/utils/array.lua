@@ -1,7 +1,7 @@
 ---@class NeotreeArray.push<T> : { pushleft: fun(self: any, value: T), pushright: fun(self: any, value: T) }
 ---@class NeotreeArray.pop<T> : { popleft: (fun(self: any): T), popright: (fun(self: any): T) }
 ---@class NeotreeArray.add<T> : { append: fun(self: any, value: T), extend: fun(self: any, ...: T) }
----@class NeotreeArray.extra<T> : { len: (fun(self: any): integer), peek: (fun(self: any, index: integer): T) }
+---@class NeotreeArray.extra<T> : { len: (fun(self: any): integer), peek: (fun(self: any, index: integer): T), __debug_print: (fun(self: any, name: string)) }
 ---@class NeotreeArray<T>: { left: integer, right: integer, __data: T[] }
 
 ---@class NeotreeArray
@@ -90,6 +90,20 @@ function Array:extend(...)
   for _, value in ipairs({ ... }) do
     self:pushright(value)
   end
+end
+
+function Array:__debug_print(name)
+  local result = { "{", "  " }
+  for i = 1, self:len() do
+    local value = tostring(self:peek(i)) .. ", "
+    if #result[#result] + #value > 100 then
+      result[#result + 1] = "  " .. value
+    else
+      result[#result] = result[#result] .. value
+    end
+  end
+  result[#result + 1] = "}"
+  vim.print(tostring(name) .. ": " .. table.concat(result, "\n"))
 end
 
 -- \@generic is not clever enough, so we need to create new type names for each content type
