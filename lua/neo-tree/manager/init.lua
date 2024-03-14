@@ -677,7 +677,11 @@ function Manager.setup(user_config)
   local sources = user_config.sources or Manager.config.sources or {}
   -- TODO: Remove me on real release. This redirects filesystem config to filetree.
   if sources[1] ~= "filetree" or #sources ~= 1 then
-    -- log.warn("TESTING BRANCH. You've only got one source option: filetree.")
+    log.warn(table.concat({
+      [[TESTING BRANCH.]],
+      [[Overwriting source list to just: { "filetree" }.]],
+      [[Config options of `filesystem` will be used.]],
+    }, " "))
     sources = { "filetree" }
     -- local index = 1
     -- for _, source in ipairs(sources) do
