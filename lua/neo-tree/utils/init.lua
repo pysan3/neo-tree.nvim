@@ -623,7 +623,7 @@ end
 M.get_appropriate_window = function(state)
   local mgr = require("neo-tree.manager").get_current()
   if mgr then
-    return mgr:get_appropriate_window(state)
+    return mgr:get_appropriate_window()
   end
 end
 

@@ -228,7 +228,7 @@ function Filetree:fill_git_state(parent_id, depth, wait)
     if node then
       table.insert(paths, node.pathlib)
       if not depth or (node:get_depth() - root_depth < depth) then
-        queue:extend(unpack(node:get_child_ids()))
+        queue:extend(node:get_child_ids())
       end
     end
   end

@@ -78,6 +78,7 @@ function Manager.new(global_config, tabid)
     previous_windows = require("neo-tree.utils.array").integer(),
   }, Manager)
   Manager.cache[tabid] = self
+  self.previous_windows:extend(vim.api.nvim_tabpage_list_wins(tabid))
   events.subscribe({
     id = "__neo_tree_internal_tab_enter_" .. self.tabid,
     event = events.VIM_TAB_ENTER,
@@ -201,6 +202,9 @@ function Manager:navigate(args)
     scope = args.scope,
     reveal_file = args.reveal_file,
   })
+  if not state then
+    return log.error("Invalid command request. Did you misspell source?", vim.inspect(args))
+  end
   state.current_position = args.position
   state.scope = args.scope
   local posid = locals.get_posid(args.position, state.winid)
@@ -317,9 +321,9 @@ end
 ---@param args NeotreeManagerSearchArgs
 ---@param tabid integer|nil # Defaults to `nvim_get_current_tabpage`.
 function Manager:search_state(source_name, args, tabid)
+  self.wait_all_tasks()
   if not self.source_lookup[source_name] or not self.source_lookup[source_name].setup_is_done then
-    self.wait_all_tasks()
-    return self:search_state(source_name, args, tabid)
+    return nil
   end
   if args.dir == "." then
     args.dir = nil -- use getcwd instead to get absolute path
@@ -638,10 +642,15 @@ end
 function Manager:on_win_enter()
   if vim.api.nvim_get_current_tabpage() == self.tabid then
     local winid = vim.api.nvim_get_current_win()
-    local posid = self:search_win_by_winid(winid)
-    if not utils.is_floating(winid) and not (posid and locals.pos_is_fixed(posid)) then
-      self.previous_windows:append(winid)
-    end
+    vim.schedule(function()
+      if self.previous_windows:peek(-1) == winid then
+        return
+      end
+      local posid = self:search_win_by_winid(winid)
+      if not utils.is_floating(winid) and not (posid and locals.pos_is_fixed(posid)) then
+        self.previous_windows:append(winid)
+      end
+    end)
   end
 end
 
