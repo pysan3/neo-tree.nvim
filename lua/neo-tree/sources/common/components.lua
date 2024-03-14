@@ -482,7 +482,7 @@ M.indent = function(config, node, state)
   local skip_marker = state.skip_marker_at_level
   local indent_size = config.indent_size or 2
   local padding = config.padding or 0
-  local level = state.render_context.visual_depth[node:get_id()]
+  local level = state.render_context.visual_depth[node:get_id()] - 1
   local with_markers = config.with_markers
   local with_expanders = config.with_expanders == nil and file_nesting.is_enabled()
     or config.with_expanders
