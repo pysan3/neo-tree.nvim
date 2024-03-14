@@ -86,10 +86,10 @@ function Manager.new(global_config, tabid)
     end,
   })
   events.subscribe({
-    id = "__neo_tree_internal_win_leave_" .. self.tabid,
-    event = events.VIM_WIN_LEAVE,
+    id = "__neo_tree_internal_win_enter_" .. self.tabid,
+    event = events.VIM_WIN_ENTER,
     handler = function()
-      self:on_win_leave()
+      self:on_win_enter()
     end,
   })
   events.subscribe({
@@ -446,6 +446,10 @@ function Manager:create_win(posid, position, state, requested_width, name, focus
   if focus then
     vim.api.nvim_set_current_win(window.winid)
   end
+  if vim.tbl_contains(e.valid_window_positions, posid) then
+    ---@cast posid NeotreeWindowPosition # double check posid is not "current"
+    posid = locals.get_posid(posid, window.winid)
+  end
   self.window_lookup[posid] = window
   self.__window_lookup_cache[window.winid or -1] = posid
   return window
@@ -473,7 +477,7 @@ function Manager:close_win(posid, force_unmount)
       window:unmount() ---@diagnostic disable-line -- lua_ls cannot correctly detect interfaces.
       self.window_lookup[posid] = nil
       self.__window_lookup_cache[window.winid or -1] = nil
-    elseif not locals.pos_is_fixed(posid) or not vim.api.nvim_buf_is_valid(window.bufnr) then
+    elseif not locals.pos_is_fixed(posid) or not vim.api.nvim_buf_is_loaded(window.bufnr) then
       return self:close_win(posid, true)
     else
       window:hide() ---@diagnostic disable-line -- lua_ls cannot correctly detect interfaces.
@@ -559,6 +563,82 @@ function Manager:toggle_all()
         end
         self:open_state(state, pos --[[@as NeotreeWindowPosition]], state.dir)
       end
+    end
+  end
+end
+
+--          ╭─────────────────────────────────────────────────────────╮
+--          │                         Events                          │
+--          ╰─────────────────────────────────────────────────────────╯
+
+function Manager:on_buf_win_enter()
+  local current_winid = vim.api.nvim_get_current_win()
+  local posid = self:search_win_by_winid(current_winid)
+  if
+    utils.is_floating(current_winid)
+    or posid and vim.tbl_contains(e.valid_float_window_positions, posid)
+  then
+    return
+  else
+    self:close_win(e.valid_window_positions.FLOAT)
+    if not posid then
+      return
+    end
+  end
+  local bufnr = vim.api.nvim_get_current_buf()
+  local window = self.window_lookup[posid]
+  if window and window.bufnr == bufnr then
+    log.time_it("window is neo-tree", bufnr, posid, window and window.bufnr)
+    return
+  elseif window and not locals.pos_is_fixed(posid) then
+    log.time_it("was neo-tree-current but lost focus:", posid)
+    return self:close_win(posid, true)
+  end
+  if vim.bo.filetype == "neo-tree" or vim.bo.filetype == "neo-tree-popup" then
+    log.time_it("new neo-tree window", bufnr, window and window.bufnr)
+    return
+  end
+  log.timer_start("on_buf_win_enter")
+  local state = self:get_state(self.position_state[posid])
+  local target_window, is_neo_tree_window = self:get_appropriate_window()
+  if not is_neo_tree_window and target_window ~= current_winid then
+    log.time_it("target is not a neo-tree window. sending buffer to ", target_window)
+    if state then
+      vim.api.nvim_win_set_buf(current_winid, state.bufnr)
+    else
+      self:close_win(posid, true)
+    end
+    vim.api.nvim_win_set_buf(target_window, bufnr)
+    vim.api.nvim_set_current_win(target_window)
+    return
+  end
+  -- we don't not have any good alternative window.
+  log.time_it("no good alternative window")
+  vim.cmd.sbuffer(bufnr)
+  window.bufnr = nil
+  self:close_win(posid, true)
+  if state then
+    self:done(state)
+  end
+end
+
+function Manager:on_tab_enter()
+  if vim.api.nvim_get_current_tabpage() == self.tabid then
+    for pos, state_id in pairs(self.global_position_state) do
+      local state = self:get_state(state_id, self.tabid)
+      if state then
+        self:open_state(state, pos)
+      end
+    end
+  end
+end
+
+function Manager:on_win_enter()
+  if vim.api.nvim_get_current_tabpage() == self.tabid then
+    local winid = vim.api.nvim_get_current_win()
+    local posid = self:search_win_by_winid(winid)
+    if not utils.is_floating(winid) and not (posid and locals.pos_is_fixed(posid)) then
+      self.previous_windows:append(winid)
     end
   end
 end
@@ -729,7 +809,7 @@ end
 function Manager:shutdown()
   local id_prefix = {
     "__neo_tree_internal_tab_enter_",
-    "__neo_tree_internal_win_leave_",
+    "__neo_tree_internal_win_enter_",
     "__neo_tree_internal_buf_win_enter_",
   }
   for _, prefix in ipairs(id_prefix) do
@@ -745,82 +825,6 @@ function Manager.wait_all_tasks()
   local done = nio.wait_all(Manager.global_tasks, Manager.global_tasks.done + 1)
   if done > Manager.global_tasks.done then
     Manager.global_tasks.done = done
-  end
-end
-
---          ╭─────────────────────────────────────────────────────────╮
---          │                         Events                          │
---          ╰─────────────────────────────────────────────────────────╯
-
-function Manager:on_buf_win_enter()
-  local current_winid = vim.api.nvim_get_current_win()
-  local posid = self:search_win_by_winid(current_winid)
-  if
-    utils.is_floating(current_winid)
-    or posid and vim.tbl_contains(e.valid_float_window_positions, posid)
-  then
-    return
-  else
-    self:close_win(e.valid_window_positions.FLOAT)
-    if not posid then
-      return
-    end
-  end
-  local bufnr = vim.api.nvim_get_current_buf()
-  local window = self.window_lookup[posid]
-  if window and window.bufnr == bufnr then
-    log.time_it("window is neo-tree", bufnr, posid, window and window.bufnr)
-    return
-  elseif window and not locals.pos_is_fixed(posid) then
-    log.time_it("was neo-tree-current but lost focus:", posid)
-    return self:close_win(posid, true)
-  end
-  if vim.bo.filetype == "neo-tree" or vim.bo.filetype == "neo-tree-popup" then
-    log.time_it("new neo-tree window", bufnr, window and window.bufnr)
-    return
-  end
-  log.timer_start("on_buf_win_enter")
-  local state = self:get_state(self.position_state[posid])
-  local target_window, is_neo_tree_window = self:get_appropriate_window()
-  if not is_neo_tree_window and target_window ~= current_winid then
-    log.time_it("target is not a neo-tree window. sending buffer to ", target_window)
-    if state then
-      vim.api.nvim_win_set_buf(current_winid, state.bufnr)
-    else
-      self:close_win(posid, true)
-    end
-    vim.api.nvim_win_set_buf(target_window, bufnr)
-    vim.api.nvim_set_current_win(target_window)
-    return
-  end
-  -- we don't not have any good alternative window.
-  log.time_it("no good alternative window")
-  vim.cmd.sbuffer(bufnr)
-  window.bufnr = nil
-  self:close_win(posid, true)
-  if state then
-    self:done(state)
-  end
-end
-
-function Manager:on_tab_enter()
-  if vim.api.nvim_get_current_tabpage() == self.tabid then
-    for pos, state_id in pairs(self.global_position_state) do
-      local state = self:get_state(state_id, self.tabid)
-      if state then
-        self:open_state(state, pos)
-      end
-    end
-  end
-end
-
-function Manager:on_win_leave()
-  if vim.api.nvim_get_current_tabpage() == self.tabid then
-    local winid = vim.api.nvim_get_current_win()
-    local posid = self:search_win_by_winid(winid)
-    if not utils.is_floating(winid) and not (posid and locals.pos_is_fixed(posid)) then
-      self.previous_windows:append(winid)
-    end
   end
 end
 
