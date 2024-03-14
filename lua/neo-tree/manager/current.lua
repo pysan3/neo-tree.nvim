@@ -2,8 +2,11 @@ local NuiSplit = require("nui.split")
 local buf_storage = require("nui.utils.buf_storage")
 local utils = require("nui.utils")
 
+---@class NeotreeCurrentWin.internal : nui_split_internal
+---@field last_buf integer|nil
+
 ---@class NeotreeCurrentWin : NuiSplit
----@field private _ nui_split_internal
+---@field private _ NeotreeCurrentWin.internal
 local M = NuiSplit:extend("NeotreeCurrentWin") ---@diagnostic disable-line
 
 function M:_open_window()
@@ -12,6 +15,7 @@ function M:_open_window()
   end
 
   self.winid = vim.api.nvim_get_current_win()
+  self._.last_buf = vim.api.nvim_get_current_buf()
 
   vim.api.nvim_win_set_buf(self.winid, self.bufnr)
 
@@ -37,7 +41,15 @@ function M:_buf_destroy()
 
       if not self._.pending_quit then
         if self.bufnr == vim.api.nvim_get_current_buf() then
-          vim.cmd("bn")
+          local last_buf = self._.last_buf
+          if not last_buf or not vim.api.nvim_buf_is_loaded(last_buf) then
+            last_buf = vim.fn.bufnr("$")
+          end
+          if last_buf == -1 or not vim.fn.bufexists(last_buf) then
+            vim.cmd("bp")
+          else
+            vim.api.nvim_set_current_buf(last_buf)
+          end
         end
         vim.api.nvim_buf_delete(self.bufnr, { force = true })
       end
