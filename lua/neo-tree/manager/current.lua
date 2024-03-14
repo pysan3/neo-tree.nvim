@@ -26,7 +26,6 @@ function M:_close_window()
   if not self.winid then
     return
   end
-  vim.cmd("bn")
 
   self.winid = nil
 end
