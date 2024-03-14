@@ -238,13 +238,15 @@ end
 ---@param state NeotreeFiletree
 ---@param node NuiTreeNode|nil
 M.nowrap.expand_all_nodes = function(state, node)
-  if node == nil then
-    node = state.tree:get_node() or state.tree:get_node(tostring(state.dir))
-    if not node then
-      return
-    end
+  node = node or state.tree:get_node() or state.tree:get_node(tostring(state.dir))
+  if not node then
+    return
   end
   state:fill_tree(node:get_id(), nil)
+  for _, child in ipairs(state.__locals.get_node_list(state.tree, node:get_id())) do
+    child:expand()
+  end
+  node:expand()
   redraw(state)
 end
 

@@ -52,6 +52,13 @@ M.execute = function(args)
     return
   end
 
+  -- TODO: Test code for filesystem -> filetree <2024-03-14>
+  -- Redirecting filesystem to filetree.
+  if args.source and args.source == "filesystem" then
+    log.debug("TESTING BRANCH: Redirecting source: filesystem to filetree.")
+    args.source = "filetree"
+  end
+
   local nio = require("neo-tree.utils.nio_wrapper")
   nio.run(function()
     local mgr = require("neo-tree.manager").new(nt.config, vim.api.nvim_get_current_tabpage())

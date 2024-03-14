@@ -144,7 +144,7 @@ end
 ---@param node table A node to expand
 ---@param prefetcher table an object with two methods `prefetch(state, node)` and `should_prefetch(node) => boolean`
 M.nowrap.expand_all_nodes = function(state, node, prefetcher)
-  error("DEPRECATED: use state:fill_tree instead.")
+  error("DEPRECATED: WIP")
   log.debug("Expanding all nodes under " .. node:get_id())
   if prefetcher == nil then
     prefetcher = node_expander.default_prefetcher
