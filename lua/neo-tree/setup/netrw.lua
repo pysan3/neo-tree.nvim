@@ -26,6 +26,10 @@ M.get_hijack_netrw_behavior = function()
 end
 
 M.hijack = function()
+  log.warn("hijack not implemented yet.")
+  if true then
+    return false
+  end
   local hijack_behavior = M.get_hijack_netrw_behavior()
   if hijack_behavior == "disabled" then
     return false
