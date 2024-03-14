@@ -203,7 +203,7 @@ function Manager:navigate(args)
   })
   state.current_position = args.position
   state.scope = args.scope
-  local posid = locals.get_posid(args.position)
+  local posid = locals.get_posid(args.position, state.winid)
   if args.action == "close" or (args.toggle and self:window_exists(state.id)) then
     return self:close_win(posid)
   end
@@ -332,7 +332,7 @@ function Manager:search_state(source_name, args, tabid)
   end
   local id = source_name .. mod_id
   if args.scope == "window" then
-    id = "TODO: RANDOM"
+    id = string.format([[%s-%s-%s]], id, self:get_tabid(tabid), vim.api.nvim_get_current_win())
   end
   local state = self:get_state(id, tabid)
     or self:set_state(mod.new(info.source_config, id, args.dir), tabid) -- register `mod.new`
