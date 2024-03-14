@@ -255,7 +255,9 @@ function Manager:done(state, requested_window_width, requested_curpos)
     end
   end
   self.previous_source = state.name
-  self.previous_position[state.name] = position
+  if not vim.tbl_contains(e.valid_phantom_window_positions, position) then
+    self.previous_position[state.name] = position
+  end
   local posid = locals.get_posid(position, state.winid)
   local window = self:create_win(posid, position, state, requested_window_width, "TODO", false)
   local new_posid = locals.get_posid(position, window.winid)
