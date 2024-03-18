@@ -748,6 +748,19 @@ M.reverse_list = function(list)
   return result
 end
 
+---Reverse the order of a list in place.
+---Time: O(n), Mem: O(n).
+---@generic T
+---@param list T[]
+---@return T[] list # Same address as the input array.
+M.reverse_list_inplace = function(list)
+  local n, m = #list, #list / 2
+  for i = 1, m do
+    list[i], list[n - i + 1] = list[n - i + 1], list[i]
+  end
+  return list
+end
+
 M.resolve_config_option = function(state, config_option, default_value)
   local opt = M.get_value(state, config_option, default_value, false)
   if type(opt) == "function" then

@@ -456,6 +456,52 @@ M.async.fuzzy_sorter_directory = function(state)
   filter.show_filter(state, true, "directory", true)
 end
 
+--   ──────────────────────── Search Cursor Movement ──────────────────────
+
+---@param state NeotreeState
+---@param relative integer
+M.async.move_cursor_rel = function(state, relative)
+  local current_focus = state.tree:get_node()
+  local current_node_id = current_focus and current_focus:get_id()
+  local node_list = state.__locals.get_node_list(state.tree, "dfs")
+  local node_length = #node_list
+  if not current_focus or not current_node_id or relative == 0 then
+    return
+  elseif relative < 0 then
+    utils.reverse_list_inplace(node_list)
+    relative = -relative
+  end
+  local relative_count = 0
+  local start_relative = false
+  for i = 1, (node_length * 2) do -- 2 loops to enable loop around top/bottom
+    local node = node_list[(i - 1) % node_length + 1] -- fu** lua
+    if not node.skip_in_search and node.type == "file" then
+      if not start_relative and node:get_id() == current_node_id then
+        start_relative = true
+        relative_count = 1
+      elseif relative_count >= relative then
+        state:focus_node(node:get_id())
+        break
+      elseif start_relative then
+        relative_count = relative_count + 1
+      end
+    end
+  end
+  renderer.redraw(state)
+end
+
+---Change selected node upwards while in search mode.
+---@param state NeotreeState
+M.async.move_cursor_up = function(state)
+  return M.move_cursor_rel(state, -1)
+end
+
+---Change selected node downwards while in search mode.
+---@param state NeotreeState
+M.async.move_cursor_down = function(state)
+  return M.move_cursor_rel(state, 1)
+end
+
 M.async.next_source = function(state)
   local sources = require("neo-tree").config.sources
   local sources = require("neo-tree").config.source_selector.sources

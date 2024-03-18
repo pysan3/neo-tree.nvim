@@ -279,10 +279,31 @@ function Manager:done(state, requested_window_width, requested_curpos)
   if state.cursor_update_by_user then
     renderer.position.clear(state)
   else
+    local linenr = state.position.lnum or 1
+    local col = state.position.col or 0
     renderer.position.restore(state)
+    local bottom_padding = state._tree_in_search and 4 or 0
+    local lines = vim.api.nvim_buf_line_count(state.bufnr)
+    local win_height = vim.api.nvim_win_get_height(state.winid)
+    local virtual_bottom_line = vim.fn.line("w0", state.winid) - 1 + win_height - bottom_padding
+    if virtual_bottom_line <= linenr then
+      vim.api.nvim_win_call(window.winid, function()
+        vim.cmd("normal! " .. (linenr + bottom_padding) .. "zb")
+      end)
+      pcall(vim.api.nvim_win_set_cursor, state.winid, { linenr, col })
+    elseif virtual_bottom_line > lines then
+      vim.api.nvim_win_call(window.winid, function()
+        vim.cmd("normal! " .. (lines + bottom_padding) .. "zb")
+      end)
+      pcall(vim.api.nvim_win_set_cursor, state.winid, { linenr, col })
+    elseif linenr < (win_height / 2) then
+      vim.api.nvim_win_call(window.winid, function()
+        vim.cmd("normal! zz")
+      end)
+    end
     renderer.position.clear(state)
   end
-  locals.set_keymaps(window, state)
+  locals.set_keymaps(window, state, state.config.window.mappings, "n")
   log.time_it("rendering sequence done!")
 end
 
@@ -458,11 +479,9 @@ function Manager:show_filter(state, search_as_you_type, fuzzy_finder_mode, use_f
       state:search_end()
     end)
   end, { once = true })
-  -- if fuzzy_finder_mode then
-  --   for lhs, cmd_name in pairs(state.window.fuzzy_finder_mappings) do
-  --     vim.print(lhs)
-  --   end
-  -- end
+  if fuzzy_finder_mode then
+    locals.set_keymaps(input, state, state.config.window.fuzzy_finder_mappings, "i")
+  end
   input:mount()
   return input
 end
@@ -838,6 +857,8 @@ function Manager.setup(user_config)
       if Manager.config.use_default_mappings == false then
         default_config.window.mappings = {}
         default_source_config.window.mappings = {}
+        default_config.window.fuzzy_finder_mappings = {}
+        default_source_config.window.fuzzy_finder_mappings = {}
       end
       local default_mapping_options = vim.tbl_extend(
         "force",
@@ -852,6 +873,14 @@ function Manager.setup(user_config)
         default_source_config.window.mappings or {},
         user_config.window.mappings or {},
         user_source_config.window.mappings or {}
+      )
+      info.source_config.window.fuzzy_finder_mappings = locals.fix_and_merge_mappings(
+        info.source_config.commands,
+        default_mapping_options,
+        default_config.window.fuzzy_finder_mappings or {},
+        default_source_config.window.fuzzy_finder_mappings or {},
+        user_config.window.fuzzy_finder_mappings or {},
+        user_source_config.window.fuzzy_finder_mappings or {}
       )
       info.source_config.components = locals.merge_components(
         default_config.default_component_configs or {},
@@ -1155,24 +1184,27 @@ end
 ---Set keybinds using `window:map` for one state.
 ---@param window NuiSplit|NuiPopup|NeotreeCurrentWin
 ---@param state NeotreeState
-function locals.set_keymaps(window, state)
-  for lhs, opts in pairs(state.config.window.mappings) do
+---@param mappings NeotreeConfig.mappings
+---@param map_mode string|"n" # mode to map `func`
+function locals.set_keymaps(window, state, mappings, map_mode)
+  for lhs, opts in pairs(mappings) do
     local func = opts.func
     local vfunc = opts.vfunc
-    local config = opts.config or {}
-    for key, value in pairs(config) do
-      if type(value) == "table" then
-        state.config[key] = vim.tbl_deep_extend("force", state.config[key] or {}, value)
-      else
-        state.config[key] = value
-      end
-    end
     opts = locals.normalize_keymap_opts(opts)
-    window:map("n", lhs, function()
+    window:map(map_mode or "n", lhs, function()
       log.timer_start("keybind: " .. opts.desc)
-      return func and nio.run(function()
-        return func(state)
-      end)
+      return func
+        and nio.run(function()
+          local config = opts.config or {}
+          for key, value in pairs(config) do
+            if type(value) == "table" then
+              state.config[key] = vim.tbl_deep_extend("force", state.config[key] or {}, value)
+            else
+              state.config[key] = value
+            end
+          end
+          return func(state)
+        end)
     end, opts)
     if vfunc then
       local cb = function()
@@ -1185,6 +1217,14 @@ function locals.set_keymaps(window, state)
           log.time_it("#selected_nodes =", selected_nodes and #selected_nodes or 0)
           if selected_nodes and #selected_nodes > 0 then
             nio.run(function()
+              local config = opts.config or {}
+              for key, value in pairs(config) do
+                if type(value) == "table" then
+                  state.config[key] = vim.tbl_deep_extend("force", state.config[key] or {}, value)
+                else
+                  state.config[key] = value
+                end
+              end
               return vfunc(state, selected_nodes)
             end)
           end

@@ -92,10 +92,11 @@ function Array:extend(array)
   end
 end
 
-function Array:__debug_print(name)
+function Array:__debug_print(name, __tostring)
+  __tostring = __tostring or tostring
   local result = { "{", "  " }
   for i = 1, self:len() do
-    local value = tostring(self:peek(i)) .. ", "
+    local value = __tostring(self:peek(i)) .. ", "
     if #result[#result] + #value > 100 then
       result[#result + 1] = "  " .. value
     else

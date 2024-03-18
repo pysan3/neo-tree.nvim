@@ -198,6 +198,8 @@ function Source:redraw(manager, window_width, curpos)
           curpos = { lnum = linenr, col = string.len(node.indent or "") }
           local _msg = "focus node: %s, linenr: %s, curpos: %s"
           log.fmt_trace(_msg, node:get_id(), linenr, vim.inspect(curpos))
+        else
+          log.time_it("no focusable node:", self.focused_node)
         end
       else
         log.time_it("no focus node:", self.focused_node)
@@ -482,9 +484,6 @@ function Source:focus_node(node_id)
   if node_id == nil then
     return
   end
-  if not vim.startswith(node_id, self.dir:tostring()) then
-    return nil
-  end
   self:modify_tree(function(tree)
     local node, linenr = self.tree:get_node(node_id)
     if node and not linenr then
@@ -717,11 +716,7 @@ function Source:sort_tree(algorithm_name, opts, sort_function)
       for _, node in pairs(node_table) do
         if node:has_children() then
           self:add_task(function()
-            local n, m = #node._child_ids, #node._child_ids / 2
-            for i = 1, m do
-              node._child_ids[i], node._child_ids[n - i + 1] =
-                node._child_ids[n - i + 1], node._child_ids[i]
-            end
+            utils.reverse_list_inplace(node._child_ids)
           end, task_name)
         end
       end
@@ -819,6 +814,7 @@ function Source:search_tree(manager, window_width, term, use_fzy, file_types)
   log.time_it("redraw_tree", term)
 end
 
+---End search mode and resume previous state.
 function Source:search_end()
   self._tree_in_search = false
   if self.sort_info and vim.startswith(self.sort_info.name, "search_tree ") then
