@@ -59,7 +59,7 @@ function Filetree.new(config, id, dir)
     self:fill_tree(nil, 1, nil)
     if self.enable_git_status then
       nio.run(function()
-        self:fill_git_state(nil, 1, false)
+        self:fill_git_state(nil, 1, true)
       end)
     end
   end)
@@ -207,37 +207,35 @@ end
 ---@async
 ---@param parent_id string|nil # If nil, runs against all root nodes (each root node is processed separately).
 ---@param depth integer|nil # 1 to scan a single folder without digging into grandchildren. Nil will go all the way.
----@param wait boolean|nil # If true, send all paths at once and wait for all to finish. If falsy, add update request to queue.
-function Filetree:fill_git_state(parent_id, depth, wait)
+---@param redraw boolean|nil # If true, redraws tree after all are done.
+function Filetree:fill_git_state(parent_id, depth, redraw)
   if parent_id == nil then
     local roots = self.tree:get_nodes()
     if roots then
       for _, root in ipairs(roots) do
-        self:fill_git_state(root:get_id(), depth, wait)
+        self:fill_git_state(root:get_id(), depth, redraw)
       end
     end
     return
   end
   -- Accumulate all node.pathlib under `parent_id` with BFS.
-  local paths, queue = {}, require("neo-tree.utils.array").string()
+  local queue = require("neo-tree.utils.array").string()
   queue:pushright(parent_id)
   local root = self.tree:get_node(queue:peek(1))
   local root_depth = root and root:get_depth()
   while queue:len() > 0 do
     local node = self.tree:get_node(queue:popleft())
     if node then
-      table.insert(paths, node.pathlib)
+      self:add_task(function()
+        pathlib_git.request_git_status_update(node.pathlib, {})
+        if redraw then
+          self:assign_future_redraw(node.pathlib.git_state.is_ready)
+        end
+      end, "fill_git_state")
       if not depth or (node:get_depth() - root_depth < depth) then
         queue:extend(node:get_child_ids())
       end
     end
-  end
-  log.time_it("fill_git_state: #paths:", #paths)
-  self:add_task(function()
-    pathlib_git.fill_git_state(paths)
-  end, "fill_git_state")
-  if wait and #paths > 0 then
-    self:wait_all_tasks("fill_git_state", true)
   end
 end
 
@@ -285,6 +283,14 @@ function Filetree:fill_tree(parent_id, depth, reveal_path)
           local _parent = path:parent_assert():tostring()
           node = locals.new_node(path, path:len() - scan_root_len + scan_root_depth + 1) -- level starts from 1
           table.insert(nodes[_parent], node)
+          nio.nohup(function()
+            if self.enable_git_status then
+              pathlib_git.request_git_status_update(node.pathlib, {})
+            end
+            if self.use_libuv_file_watcher then
+              self:assign_file_watcher(node.pathlib)
+            end
+          end)
         end
         node.is_reveal_target = reveal_path and path == reveal_path or false
       end, tasks_name)
@@ -329,20 +335,6 @@ function Filetree:fill_tree(parent_id, depth, reveal_path)
       end
     end
     log.time_it("fill_tree added nodes:", added_nodes)
-    nio.run(function()
-      if self.use_libuv_file_watcher then
-        local node_table = tree.nodes.by_id --[[@as table<any, NeotreeSourceItem>]]
-        for _, node in pairs(node_table) do
-          self:assign_file_watcher(node.pathlib)
-        end
-      end
-      if self.enable_git_status then
-        self:fill_git_state(parent_id, opts.depth, true)
-        log.time_it("fill_tree request git_state:", added_nodes)
-        renderer.redraw(self)
-        log.time_it("fill_tree redraw git_state:", added_nodes)
-      end
-    end)
   end)
 end
 
@@ -476,7 +468,8 @@ function Filetree:assign_file_watcher(pathlib)
         if not _tree:get_node(new_path:tostring()) then
           self:assign_file_watcher(new_path)
           self:add_task(function()
-            pathlib_git.fill_git_state({ new_path })
+            pathlib_git.request_git_status_update(new_path, {})
+            self:assign_future_redraw(new_path.git_state.is_ready)
           end, "fill_git_state")
           local new_node = locals.new_node(new_path, new_path:len() - self.dir:len())
           _tree:add_node(new_node, _p:tostring())

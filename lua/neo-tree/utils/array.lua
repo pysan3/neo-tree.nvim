@@ -111,10 +111,13 @@ end
 
 ---@alias NeotreeArray.integer NeotreeArray<integer>|NeotreeArray.push<integer>|NeotreeArray.pop<integer>|NeotreeArray.add<integer>|NeotreeArray.extra<integer>
 ---@alias NeotreeArray.string NeotreeArray<string>|NeotreeArray.push<string>|NeotreeArray.pop<string>|NeotreeArray.add<string>|NeotreeArray.extra<string>
+---@alias NeotreeArray.NuiTreeNode NeotreeArray<NuiTreeNode>|NeotreeArray.push<NuiTreeNode>|NeotreeArray.pop<NuiTreeNode>|NeotreeArray.add<NuiTreeNode>|NeotreeArray.extra<NuiTreeNode>
 
 return {
   ---@type NeotreeArray.integer|fun(...: integer): NeotreeArray.integer
   integer = Array,
   ---@type NeotreeArray.string|fun(...: string): NeotreeArray.string
   string = Array,
+  ---@type NeotreeArray.NuiTreeNode|fun(...: NuiTreeNode): NeotreeArray.NuiTreeNode
+  tree_node = Array,
 }

@@ -24,8 +24,20 @@ function M.run(func, cb)
   end
 end
 
+function M.nohup(func)
+  if not M.check_nio_install() then
+    return func()
+  else
+    local t = coroutine.create(func)
+    vim.schedule(function()
+      coroutine.resume(t)
+    end)
+    return t
+  end
+end
+
 function M.wait(task)
-  if not M.check_nio_install() or task == nil then
+  if not M.check_nio_install() or task == nil or not M.current_task() then
     return task
   else
     return task.wait()
@@ -48,14 +60,6 @@ end
 function M.scheduler()
   if M.current_task() then
     return M.nio.scheduler()
-  end
-end
-
-function M.create(func, argc)
-  if not M.check_nio_install() then
-    return func
-  else
-    return M.nio.wrap(func, argc or 0)
   end
 end
 

@@ -515,9 +515,11 @@ function locals.get_node_table(tree, parent_id, filter_func)
   local index, max_index = 1, #queue
   while index <= max_index do
     local node = queue[index]
-    result[node:get_id()] = node
+    local node_id = node:get_id()
+    queue[index] = nil
+    result[node_id] = node
     if node:has_children() then
-      local children = tree:get_nodes(queue[index])
+      local children = tree:get_nodes(node_id)
       for i, child in ipairs(children) do
         if not filter_func or filter_func(child) then
           max_index = max_index + 1
@@ -535,53 +537,209 @@ end
 -- You may want to use `locals.get_node_id_list` instead.
 --
 ---@param tree NuiTree
+---@param algo "bfs"|"dfs" # Breadth first / depth first search
 ---@param parent_id string|nil
 ---@param filter_func (fun(node: NuiTreeNode): boolean)|nil # Filter out node if this func returns false.
-function locals.get_node_list(tree, parent_id, filter_func)
+function locals.get_node_list(tree, algo, parent_id, filter_func)
+  local array = require("neo-tree.utils.array").tree_node(unpack(tree:get_nodes(parent_id)))
+  local push_func = algo == "dfs" and array.pushleft or array.pushright -- "bfs": queue, "dfs": stack
   ---@type NuiTreeNode[]
-  local nodes = tree:get_nodes(parent_id)
-  local index, max_index = 1, #nodes
-  while index <= max_index do
-    local node = nodes[index]
+  local result = {}
+  while array:len() > 0 do
+    local node = array:popleft()
+    table.insert(result, node)
     if node:has_children() then
       local children = tree:get_nodes(node:get_id())
-      for i, child in ipairs(children) do
+      local child_length = #children
+      for i = 1, child_length do
+        local child = algo == "dfs" and children[child_length - i + 1] or children[i] -- push in reverse with "dfs"
         if not filter_func or filter_func(child) then
-          max_index = max_index + 1
-          nodes[max_index] = child
+          push_func(array, child)
         end
       end
     end
-    index = index + 1
   end
-  return nodes
+  return result
 end
 
 ---Return a list that contains all node ids in the tree recursively.
 ---@param tree NuiTree
+---@param algo "bfs"|"dfs" # Breadth first / depth first search
 ---@param parent_id string|nil
 ---@param filter_func (fun(node: NuiTreeNode): boolean)|nil # Filter out node if this func returns false.
-function locals.get_node_id_list(tree, parent_id, filter_func)
-  ---@type NuiTreeNode[]
-  local nodes = tree:get_nodes(parent_id)
-  ---@type string[]
-  local res = {}
-  local index, max_index = 1, #nodes
-  while index <= max_index do
-    local node = nodes[index]
-    res[index] = node:get_id()
+function locals.get_node_id_list(tree, algo, parent_id, filter_func)
+  local array = require("neo-tree.utils.array").tree_node(unpack(tree:get_nodes(parent_id)))
+  local push_func = algo == "dfs" and array.pushleft or array.pushright -- "bfs": queue, "dfs": stack
+  ---@type NeotreeNodeId[]
+  local result = {}
+  while array:len() > 0 do
+    local node = array:popleft()
+    table.insert(result, node:get_id())
     if node:has_children() then
       local children = tree:get_nodes(node:get_id())
-      for i, child in ipairs(children) do
+      local child_length = #children
+      for i = 1, child_length do
+        local child = algo == "dfs" and children[child_length - i + 1] or children[i] -- push in reverse with "dfs"
         if not filter_func or filter_func(child) then
-          max_index = max_index + 1
-          nodes[max_index] = child
+          push_func(array, child)
         end
       end
     end
-    index = index + 1
   end
-  return res
+  return result
+end
+
+--          ╭─────────────────────────────────────────────────────────╮
+--          │                       Alter Tree                        │
+--          ╰─────────────────────────────────────────────────────────╯
+
+---Deep sort the tree with algorithm. Caches previous sort algorithm so result can be reused when called with
+---same algorithm once again.
+---When the algorithm is different from previous, deep sort in performed and previous sort is cleared.
+---@param algorithm_name string # Give a unique name of the sorting algorithm.
+---@param opts NeotreeStateSortInfo # Additional opts for sorting.
+---@param sort_function fun(a: NuiTreeNode, b: NuiTreeNode): boolean
+---@overload fun(self: NeotreeState, algorithm_name: NeotreeSortName, opts: NeotreeStateSortInfo) # Use pre-defined functions.
+function Source:sort_tree(algorithm_name, opts, sort_function)
+  local reverse = opts.reverse and true or false
+  if not sort_function then
+    local pre_defined = require("neo-tree.sources.base.sort").pre_defined
+    assert(pre_defined[algorithm_name], algorithm_name .. " is not found in pre-defined.")
+    sort_function = pre_defined[algorithm_name]
+  end
+  local task_name = "__sort_tree_" .. algorithm_name
+  if not self.sort_info or self.sort_info.name ~= algorithm_name or opts.force then
+    -- deep sort tree
+    self:modify_tree(function(tree)
+      local node_table = locals.get_node_table(tree)
+      for _, node in pairs(node_table) do
+        if node:has_children() then
+          self:add_task(function()
+            self.sort_node(node, node_table, sort_function, reverse)
+          end, task_name)
+        end
+      end
+      self:wait_all_tasks(task_name)
+    end)
+  elseif self.sort_info.name == algorithm_name and self.sort_info.reverse ~= reverse then
+    -- reverse tree
+    self:modify_tree(function(tree)
+      local node_table = locals.get_node_table(tree)
+      for _, node in pairs(node_table) do
+        if node:has_children() then
+          self:add_task(function()
+            local n, m = #node._child_ids, #node._child_ids / 2
+            for i = 1, m do
+              node._child_ids[i], node._child_ids[n - i + 1] =
+                node._child_ids[n - i + 1], node._child_ids[i]
+            end
+          end, task_name)
+        end
+      end
+      self:wait_all_tasks(task_name)
+    end)
+  elseif self.sort_info.force then
+    -- identical but force is true. retry with force enabled
+    opts.force = true
+    return self:sort_tree(algorithm_name, opts, sort_function)
+  else
+    return -- identical, do nothing
+  end
+  self:wait_all_tasks(task_name)
+  local prev = self.sort_info
+  if self.sort_info and self.sort_info.one_time then
+    prev = self.sort_info.__previous
+  end
+  self.sort_info = {
+    name = algorithm_name,
+    func = sort_function,
+    reverse = reverse,
+    one_time = opts.one_time,
+    __previous = prev,
+  }
+end
+
+---Go back to previous sort method.
+---The result is not cached, so this will require a deep sort anyways.
+function Source:sort_tree_previous()
+  local prev = self.sort_info and self.sort_info.__previous or getmetatable(self).sort_info
+  if not prev then
+    return
+  end
+  self.sort_info = prev.__previous
+  local opts = { reverse = prev.reverse, force = true, one_time = true }
+  return self:sort_tree(prev.name, opts, prev.func)
+end
+
+---@param node NuiTreeNode
+---@param child_lookup table<string, NuiTreeNode>
+---@param func NeotreeTypes.sort_function
+---@param reverse boolean
+function Source.sort_node(node, child_lookup, func, reverse)
+  reverse = not not reverse
+  table.sort(node._child_ids, function(a, b)
+    if not child_lookup[a] or not child_lookup[b] then
+      return (not not child_lookup[a]) ~= reverse
+    else
+      return func(child_lookup[a], child_lookup[b], reverse)
+    end
+  end)
+end
+
+---Initiate a search. Filter down the nodes using external binary if needed, else return all nodes.
+---@param term string # User input separated with spaces.
+---@param use_fzy boolean # Use fzy to sort results. If false, `term` are treated as glob search and result is not sorted.
+---@param file_types NeotreeFindFileTypes|nil
+function Source:find_tree(term, use_fzy, file_types)
+  assert(false, "WIP")
+end
+
+---Execute a search inside the tree.
+---@param manager NeotreeManager # Call done when you are done.
+---@param window_width integer # Default window width.
+---@param term string # User input separated with spaces.
+---@param use_fzy boolean # Use fzy to sort results. If false, `term` are treated as glob search and result is not sorted.
+---@param file_types NeotreeFindFileTypes|nil
+function Source:search_tree(manager, window_width, term, use_fzy, file_types)
+  if self.fzy_sort_result_scores and self.fzy_sort_result_scores.__process then
+    pcall(self.fzy_sort_result_scores.__process.signal, 15)
+    self.fzy_sort_result_scores.__process.result()
+  end
+  self.fzy_sort_result_scores = {}
+  self:find_tree(term, use_fzy, file_types)
+  log.time_it("find_tree", term)
+  local sort_func = require("neo-tree.sources.base.sort").constructor.by_lookuptable_backpropagate(
+    self.fzy_sort_result_scores,
+    self.dir.sep_str,
+    true
+  )
+  log.time_it("sort_func", term)
+  self:sort_tree("search_tree " .. term, { reverse = true, one_time = true }, sort_func)
+  log.time_it("sort_tree", term)
+  -- change `node.skip_in_search` and find first file to focus
+  local first_node_id = nil
+  for _, node in ipairs(locals.get_node_list(self.tree, "dfs")) do
+    local score = self.fzy_sort_result_scores[node:get_id()]
+    node.skip_in_search = not score or score <= 0
+    if not first_node_id and not node.skip_in_search and node.type == "file" then
+      first_node_id = node:get_id()
+    end
+  end
+  self:focus_node(first_node_id)
+  self:redraw(manager, window_width)
+  log.time_it("redraw_tree", term)
+end
+
+function Source:search_end()
+  self._tree_in_search = false
+  if self.sort_info and vim.startswith(self.sort_info.name, "search_tree ") then
+    local curpos = vim.api.nvim_win_get_cursor(self.winid)
+    local focused_node = self.tree:get_node(curpos[1]) -- get node of cursor line
+    self:explicitly_restore(true)
+    self:sort_tree_previous()
+    self:focus_node(focused_node and focused_node:get_id()) -- and focus it.
+  end
+  renderer.redraw(self)
 end
 
 --          ╭─────────────────────────────────────────────────────────╮

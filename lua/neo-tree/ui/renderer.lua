@@ -725,6 +725,7 @@ M.position = {
 }
 
 ---Redraw the tree without relaoding from the source.
+---@async
 ---@param state NeotreeState
 ---@param curpos NeotreeCursorPos|nil # Set cursor position. (row, col)
 M.redraw = function(state, curpos)
