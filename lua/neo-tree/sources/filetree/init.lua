@@ -434,7 +434,7 @@ function Filetree:find_tree(term, use_fzy, file_types)
   local glob, regex
   if not use_fzy then -- glob
     glob = "*" .. term:gsub("%*?(.*)%*?", "%1") .. "*"
-  else -- fzy, but start with `fd` regex to cut lua computation
+  else -- fzy: start with `fd` regex to cut lua computation
     local escaped = vim.fn.escape(term, [[%+-?[^$(){}=!<>|:#]])
     local split = vim.split(escaped, " ", { plain = true, trimempty = true })
     table.insert(split, 1, "")
@@ -457,7 +457,7 @@ function Filetree:find_tree(term, use_fzy, file_types)
     gitignore = not filters.visible and filters.hide_gitignored,
   }
   local valid, args =
-    ext.make_args(cmd, pwd, glob, regex, match_abs, file_types, ignore, limit, config.find_args)
+    ext.make_args(cmd, pwd, regex, glob, match_abs, file_types, ignore, limit, config.find_args)
   local process = valid and nio.new_process(cmd, args)
   if not valid or not process then
     return
