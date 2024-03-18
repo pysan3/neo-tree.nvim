@@ -646,6 +646,9 @@ function Manager:on_win_enter()
       if self.previous_windows:peek(-1) == winid then
         return
       end
+      if not winid or not vim.api.nvim_win_is_valid(winid) then
+        return
+      end
       local posid = self:search_win_by_winid(winid)
       if not utils.is_floating(winid) and not (posid and locals.pos_is_fixed(posid)) then
         self.previous_windows:append(winid)

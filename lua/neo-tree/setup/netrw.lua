@@ -26,7 +26,7 @@ M.get_hijack_netrw_behavior = function()
 end
 
 M.hijack = function()
-  log.warn("hijack not implemented yet.")
+  -- log.warn("hijack not implemented yet.")
   if true then
     return false
   end
