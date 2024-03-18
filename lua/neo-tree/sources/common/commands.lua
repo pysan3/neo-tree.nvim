@@ -5,6 +5,7 @@ local fs_actions = require("neo-tree.sources.filesystem.lib.fs_actions")
 local fs = require("neo-tree.sources.base.lib.fs_actions")
 local utils = require("neo-tree.utils")
 local renderer = require("neo-tree.ui.renderer")
+local filter = require("neo-tree.sources.filesystem.lib.filter")
 local events = require("neo-tree.events")
 local inputs = require("neo-tree.ui.inputs")
 local popups = require("neo-tree.ui.popups")
@@ -408,6 +409,52 @@ end
 --------------------------------------------------------------------------------
 -- END Git commands
 --------------------------------------------------------------------------------
+
+--          ╭─────────────────────────────────────────────────────────╮
+--          │                    Search Operations                    │
+--          ╰─────────────────────────────────────────────────────────╯
+
+---Clear searched result.
+---@param state NeotreeState
+M.async.clear_filter = function(state)
+  state:search_end()
+end
+
+---Shows the filter input, which will filter the tree.
+---@param state NeotreeState
+M.async.filter_as_you_type = function(state)
+  filter.show_filter(state, true)
+end
+
+---Shows the filter input, which will filter the tree.
+---@param state NeotreeState
+M.async.filter_on_submit = function(state)
+  filter.show_filter(state, false)
+end
+
+---Shows the filter input in fuzzy finder mode.
+---@param state NeotreeState
+M.async.fuzzy_finder = function(state)
+  filter.show_filter(state, true, true)
+end
+
+---Shows the filter input in fuzzy finder mode.
+---@param state NeotreeState
+M.async.fuzzy_finder_directory = function(state)
+  filter.show_filter(state, true, "directory")
+end
+
+---Shows the filter input in fuzzy sorter
+---@param state NeotreeState
+M.async.fuzzy_sorter = function(state)
+  filter.show_filter(state, true, true, true)
+end
+
+---Shows the filter input in fuzzy sorter with only directories
+---@param state NeotreeState
+M.async.fuzzy_sorter_directory = function(state)
+  filter.show_filter(state, true, "directory", true)
+end
 
 M.async.next_source = function(state)
   local sources = require("neo-tree").config.sources

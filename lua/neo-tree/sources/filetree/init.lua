@@ -469,7 +469,9 @@ function Filetree:find_tree(term, use_fzy, file_types)
     end
     local path = Path(line)
     local score = 0
-    if not match_abs and path:is_relative_to(self.dir) then
+    if not use_fzy then
+      score = 1
+    elseif not match_abs and path:is_relative_to(self.dir) then
       score = ext.fzy_sort_get_total_score(terms, tostring(path:relative_to(self.dir, true)))
     else
       score = ext.fzy_sort_get_total_score(terms, path:tostring())

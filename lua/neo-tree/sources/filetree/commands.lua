@@ -3,7 +3,6 @@
 local cc = require("neo-tree.sources.common.commands")
 local fs = require("neo-tree.sources.filesystem")
 local utils = require("neo-tree.utils")
-local filter = require("neo-tree.sources.filesystem.lib.filter")
 local renderer = require("neo-tree.ui.renderer")
 local log = require("neo-tree.log")
 local nio = require("neo-tree.utils.nio_wrapper")
@@ -257,52 +256,6 @@ M.async.toggle_gitignore = function(state)
   error("TODO: V4 refactor: not implemented")
   log.warn("`toggle_gitignore` has been removed, running toggle_hidden instead.")
   M.toggle_hidden(state)
-end
-
---          ╭─────────────────────────────────────────────────────────╮
---          │                    Search Operations                    │
---          ╰─────────────────────────────────────────────────────────╯
-
----Clear searched result.
----@param state NeotreeState
-M.async.clear_filter = function(state)
-  state:search_end()
-end
-
----Shows the filter input, which will filter the tree.
-M.async.filter_as_you_type = function(state)
-  error("TODO: V4 refactor: not implemented")
-  filter.show_filter(state, true)
-end
-
----Shows the filter input, which will filter the tree.
-M.async.filter_on_submit = function(state)
-  error("TODO: V4 refactor: not implemented")
-  filter.show_filter(state, false)
-end
-
----Shows the filter input in fuzzy finder mode.
-M.async.fuzzy_finder = function(state)
-  error("TODO: V4 refactor: not implemented")
-  filter.show_filter(state, true, true)
-end
-
----Shows the filter input in fuzzy finder mode.
-M.async.fuzzy_finder_directory = function(state)
-  error("TODO: V4 refactor: not implemented")
-  filter.show_filter(state, true, "directory")
-end
-
----Shows the filter input in fuzzy sorter
----@param state NeotreeFiletree
-M.async.fuzzy_sorter = function(state)
-  filter.show_filter(state, true, true, true)
-end
-
----Shows the filter input in fuzzy sorter with only directories
-M.async.fuzzy_sorter_directory = function(state)
-  error("TODO: V4 refactor: not implemented")
-  filter.show_filter(state, true, "directory", true)
 end
 
 --          ╭─────────────────────────────────────────────────────────╮

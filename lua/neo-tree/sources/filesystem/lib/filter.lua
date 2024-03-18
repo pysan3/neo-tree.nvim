@@ -30,6 +30,7 @@ local function create_input_mapping_handle(cmd, state, scroll_padding)
 end
 
 M.show_filter = function(state, search_as_you_type, fuzzy_finder_mode, use_fzy)
+  -- TODO: Better docstring for this function <pysan3>
   local mgr = require("neo-tree.manager").get_current()
   if mgr then
     mgr:show_filter(state, search_as_you_type, fuzzy_finder_mode, use_fzy)
