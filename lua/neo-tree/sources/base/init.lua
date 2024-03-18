@@ -27,6 +27,7 @@ local renderer = require("neo-tree.ui.renderer")
 ---@field extra table|nil
 ---@field is_nested boolean|nil
 ---@field skip_node boolean|nil
+---@field skip_in_search boolean|nil
 ---@field is_empty_with_hidden_root boolean|nil
 ---@field is_reveal_target boolean|nil
 ---@field stat uv.aliases.fs_stat_table|nil
@@ -42,6 +43,14 @@ local renderer = require("neo-tree.ui.renderer")
 ---@field pathlib PathlibPath
 
 local locals = {} -- Functions exported for test purposes
+
+---@class NeotreeStateSortInfo
+---@field name string|NeotreeSortName # Algorithm name
+---@field func NeotreeTypes.sort_function # Sort function
+---@field reverse boolean # Whether the sort result should be reversed
+---@field one_time boolean|nil # If true, this algorithm will be forgotten when overwritten by other sort function.
+---@field force boolean|nil # Force run the sort
+---@field __previous NeotreeStateSortInfo|nil # Previous sort method.
 
 ---@class NeotreeStateRenderArgs
 ---@field longest_node integer # Width required to show the longest node.
@@ -65,8 +74,11 @@ local locals = {} -- Functions exported for test purposes
 ---@field _workers table<string, nio.tasks.Task[]|{ index: integer, done: integer }>|nil
 ---@field tree NuiTree|nil # Cache NuiTree if possible.
 ---@field _tree_lock nio.control.Semaphore|nil
+---@field _tree_in_search boolean|nil # True if tree is in search mode.
 ---@field focused_node string|nil # Node id of focused node if any.
+---@field sort_info NeotreeStateSortInfo|nil
 ---@field render_context NeotreeStateRenderArgs|table # State used in tree.prepare_node(item).
+---@field explicitly_opened_directories NeotreeNodeId[]|nil # List that contains all explicitly opened directories.
 local Source = setmetatable({
   -- Attributes defined here will be shared across all instances of Manager
   -- Think it as a class attribute, and put caches, const values here.
@@ -77,6 +89,11 @@ local Source = setmetatable({
   window = {},
   components = {},
   renderers = {},
+  sort_info = { -- default sort method
+    func = require("neo-tree.sources.base.sort").pre_defined.id_alphabet,
+    name = "id_alphabet",
+    reverse = false,
+  },
 }, {
   __call = function(cls, ...)
     return cls.new(...)
@@ -260,7 +277,7 @@ end
 ---@param item NuiTreeNode|NeotreeSourceItem
 ---@return NuiLine|nil
 function Source:prepare_node(item)
-  if item.skip_node then
+  if item.skip_node or (self._tree_in_search and item.skip_in_search) then
     if item.is_empty_with_hidden_root then
       local line = NuiLine()
       line:append("(empty folder)", highlights.MESSAGE)
@@ -272,7 +289,11 @@ function Source:prepare_node(item)
   local parent_id = item:get_parent_id()
   local parent_depth = parent_id and self.render_context.visual_depth[parent_id] or 0
   if self.render_context.group_empty_with then
-    if item.type == "directory" and locals.node_group_with_dirs(self.tree, item:get_id()) then
+    if
+      parent_depth > 0 -- skip root dir from being grouped
+      and item.type == "directory"
+      and locals.node_group_with_dirs(self.tree, item:get_id(), self._tree_in_search)
+    then
       self.render_context.visual_depth[item:get_id()] = parent_depth
       local skipped_parents = self.render_context.skipped_nodes[parent_id] or ""
       self.render_context.skipped_nodes[parent_id or ""] = nil
@@ -345,14 +366,15 @@ end
 ---Check if node has single child that is not `node.skip_node`, group_with_dirs.
 ---@param tree NuiTree
 ---@param node_id NeotreeNodeId
-function locals.node_group_with_dirs(tree, node_id)
+---@param in_search boolean # Tree is in search mode.
+function locals.node_group_with_dirs(tree, node_id, in_search)
   local node = tree:get_node(node_id)
   if not node or not node:has_children() then
     return false
   end
   local count, is_dir = 0, false
   for _, child in ipairs(tree:get_nodes(node_id)) do
-    if not child.skip_node then
+    if not child.skip_node and not (in_search and child.skip_in_search) then
       count = count + 1
       is_dir = child.type == "directory"
       if count > 1 then
@@ -386,7 +408,7 @@ function Source:show_nodes(source_items, tree, parent_id)
     visibility.in_empty_folder = self.config.filtered_items.force_visible_in_empty_folder
   end
   ---@diagnostic disable end
-  local expanded_node_ids = locals.get_node_id_list(tree, parent_id, function(node)
+  local expanded_node_ids = locals.get_node_id_list(tree, "bfs", parent_id, function(node)
     return node:is_expanded()
   end)
   -- draw the given nodes
@@ -428,8 +450,19 @@ end
 --          │                       Modify Tree                       │
 --          ╰─────────────────────────────────────────────────────────╯
 
+---Fill tree until depth.
+---@async
+---@param parent_id string|nil # The node id of where to start from. If nil, uses the root node.
+---@param depth integer|nil # Depth to dig into. If nil, goes all the way.
+---@param reveal_path PathlibPath|nil # Ignores depth limit and digs until this path.
+function Source:fill_tree(parent_id, depth, reveal_path)
+  error("Not Implemented")
+end
+
 ---Run callback with a mutex to `self.tree` so it is safe to modify.
----@param cb fun(tree: NuiTree)
+---@generic T
+---@param cb fun(tree: NuiTree): T|nil
+---@return T|nil
 function Source:modify_tree(cb)
   if not self._tree_lock then
     self._tree_lock = nio.semaphore(1)
@@ -501,13 +534,69 @@ function locals.remove_filtered(source_items, no_hide)
   return visible, hidden
 end
 
+--          ╭─────────────────────────────────────────────────────────╮
+--          │                          Node                           │
+--          ╰─────────────────────────────────────────────────────────╯
+
+---Remember to explicitly expand a node.
+---@param node_id NeotreeNodeId|nil
+function Source:explicitly_expand(node_id)
+  local node = node_id and self.tree:get_node(node_id)
+  if not node_id or not node then
+    return
+  end
+  self.explicitly_opened_directories = self.explicitly_opened_directories or {}
+  self.explicitly_opened_directories[node_id] = true
+  return node:expand()
+end
+
+---Remember to explicitly collapse a node.
+---@param node_id NeotreeNodeId|nil
+function Source:explicitly_collapse(node_id)
+  self.explicitly_opened_directories = self.explicitly_opened_directories or {}
+  self.explicitly_opened_directories[node_id or ""] = nil
+  local node = node_id and self.tree:get_node(node_id)
+  if not node_id or not node then
+    return
+  end
+  return node:collapse()
+end
+
+---Register all expanded nodes as explicitly opened.
+---@param reset boolean # Reset memory and forget about previous data.
+function Source:explicitly_save(reset)
+  self.explicitly_opened_directories = not reset and self.explicitly_opened_directories or {}
+  for _, node in ipairs(locals.get_node_list(self.tree, "bfs")) do
+    if node:is_expanded() then
+      self.explicitly_opened_directories[node:get_id()] = true
+    else
+      self.explicitly_opened_directories[node:get_id()] = nil
+    end
+  end
+end
+
+---Restore all explicitly opened directories.
+---@param explicitly_collapse boolean # Force collapse all nodes that are not explicitly opened.
+function Source:explicitly_restore(explicitly_collapse)
+  if not self.explicitly_opened_directories then
+    return
+  end
+  for _, node in ipairs(locals.get_node_list(self.tree, "bfs")) do
+    if self.explicitly_opened_directories[node:get_id()] then
+      node:expand()
+    elseif explicitly_collapse then
+      node:collapse()
+    end
+  end
+end
+
 ---Return a list that contains all nodes in the tree recursively.
 -- WARNING: Don't forget to free the list afterwards, or it may lead to memory leaks.
 -- You may want to use `locals.get_node_id_list` instead.
 --
 ---@param tree NuiTree
 ---@param parent_id string|nil
----@param filter_func (fun(node: NuiTreeNode): boolean)|nil # Filter out node if this func returns false.
+---@param filter_func (fun(node: NuiTreeNode): boolean)|nil # Exclude node and its children if this func returns false.
 function locals.get_node_table(tree, parent_id, filter_func)
   ---@type table<string, NuiTreeNode>
   local result = {}

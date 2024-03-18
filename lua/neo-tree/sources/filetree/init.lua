@@ -29,6 +29,13 @@ local Filetree = setmetatable({
   window = {},
   components = require("neo-tree.sources.filesystem.components"),
   renderers = {},
+  ---@type NeotreeStateSortInfo
+  sort_info = { -- default sort method
+    func = require("neo-tree.sources.base.sort").pre_defined.id_alphabet,
+    name = "id_alphabet",
+    reverse = false,
+    one_time = false,
+  },
 }, {
   __index = require("neo-tree.sources.base"), -- Inherit from base class.
   __call = function(cls, ...)
@@ -121,6 +128,19 @@ function Filetree.setup(config, global_config)
   Filetree.enable_refresh_on_write = global_config.enable_refresh_on_write
   Filetree.share_state_among_tabs = global_config.share_state_among_tabs
   Filetree.enable_git_status = global_config.enable_git_status
+  if global_config.sort_function then
+    Filetree.sort_info = {
+      name = "User",
+      func = global_config.sort_function,
+      reverse = false,
+    }
+  elseif global_config.sort_case_insensitive then
+    Filetree.sort_info = {
+      func = require("neo-tree.sources.base.sort").pre_defined.id_alphabet_nocase,
+      name = "id_alphabet_nocase",
+      reverse = false,
+    }
+  end
 
   -- Configure event handlers for file changes
   if not Filetree.use_libuv_file_watcher then
@@ -318,11 +338,13 @@ function Filetree:fill_tree(parent_id, depth, reveal_path)
         end
         added_nodes = added_nodes + #nodes[key]
         if parent:has_children() then
-          -- TODO: Implement a method to sort children here. No need to deep-sort any more.
-          if true then -- self.sort_function then
-            table.sort(parent._child_ids, function(a, b)
-              return a < b
-            end)
+          if self.sort_info and not self.sort_info.one_time then
+            ---@type table<string, NuiTreeNode>
+            local lookup = {}
+            for _, node_id in ipairs(parent:get_child_ids()) do
+              lookup[node_id] = tree:get_node(node_id)
+            end
+            self.sort_node(parent, lookup, self.sort_info.func, self.sort_info.reverse)
           end
           local child_ids = parent:get_child_ids()
           local child_len = #child_ids
@@ -397,6 +419,85 @@ function locals.skipfun_scan_deep(filtered_items_config, fallback)
       end
     end,
   }
+end
+
+--          ╭─────────────────────────────────────────────────────────╮
+--          │                       Search Tree                       │
+--          ╰─────────────────────────────────────────────────────────╯
+
+---Initiate a search. Filter down the nodes using external binary if needed, else return all nodes.
+---@param term string # User input separated with spaces.
+---@param use_fzy boolean # Use fzy to sort results. If false, `term` are treated as glob search and result is not sorted.
+---@param file_types NeotreeFindFileTypes|nil
+function Filetree:find_tree(term, use_fzy, file_types)
+  file_types = file_types or {}
+  local glob, regex
+  if not use_fzy then -- glob
+    glob = "*" .. term:gsub("%*?(.*)%*?", "%1") .. "*"
+  else -- fzy, but start with `fd` regex to cut lua computation
+    local escaped = vim.fn.escape(term, [[%+-?[^$(){}=!<>|:#]])
+    local split = vim.split(escaped, " ", { plain = true, trimempty = true })
+    table.insert(split, 1, "")
+    table.insert(split, "")
+    regex = table.concat(split, ".*")
+  end
+  ---@type NeotreeConfig.filesystem
+  local config = self.config
+  local filters = config.filtered_items or {}
+  local match_abs = config.find_by_full_path_words or false
+  local limit = config.search_limit or 100
+  local pwd = self.dir:cmd_string() .. "/"
+  local terms = vim.split(term, " ", { plain = true, trimempty = true })
+  -- on_exit: check cancelled? run filter -> construct lut backprop sorter -> rerender
+
+  local ext = require("neo-tree.sources.filesystem.lib.filter_external")
+  local cmd = ext.get_find_command(config.find_command)
+  local ignore = {
+    dotfiles = not filters.visible and filters.hide_dotfiles,
+    gitignore = not filters.visible and filters.hide_gitignored,
+  }
+  local valid, args =
+    ext.make_args(cmd, pwd, glob, regex, match_abs, file_types, ignore, limit, config.find_args)
+  local process = valid and nio.new_process(cmd, args)
+  if not valid or not process then
+    return
+  end
+  self.fzy_sort_result_scores.__process = process
+  for line in nio.execute_and_readlines(process, nil, #pwd) do
+    if not line or #line == 0 then
+      break
+    end
+    local path = Path(line)
+    local score = 0
+    if not match_abs and path:is_relative_to(self.dir) then
+      score = ext.fzy_sort_get_total_score(terms, tostring(path:relative_to(self.dir, true)))
+    else
+      score = ext.fzy_sort_get_total_score(terms, path:tostring())
+    end
+    if score > 0 then
+      self.fzy_sort_result_scores[path:tostring()] = score
+      local node_id = path:tostring()
+      if not self.tree:get_node(node_id) then
+        self:fill_tree(nil, 0, path)
+      end
+      self:modify_tree(function(tree)
+        local node, linenr = self.tree:get_node(node_id)
+        if node and not linenr then
+          locals.expand_to_node(tree, node)
+        end
+      end)
+      limit = limit - 1
+    end
+    if limit <= 0 then
+      break
+    end
+  end
+  process.signal(15)
+  if process.result() == 0 then
+    return true
+  else
+    return false
+  end
 end
 
 --          ╭─────────────────────────────────────────────────────────╮

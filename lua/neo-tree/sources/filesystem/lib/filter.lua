@@ -30,6 +30,13 @@ local function create_input_mapping_handle(cmd, state, scroll_padding)
 end
 
 M.show_filter = function(state, search_as_you_type, fuzzy_finder_mode, use_fzy)
+  local mgr = require("neo-tree.manager").get_current()
+  if mgr then
+    mgr:show_filter(state, search_as_you_type, fuzzy_finder_mode, use_fzy)
+  end
+end
+
+M.show_filter2 = function(state, search_as_you_type, fuzzy_finder_mode, use_fzy)
   local popup_options
   local winid = vim.api.nvim_get_current_win()
   local height = vim.api.nvim_win_get_height(winid)

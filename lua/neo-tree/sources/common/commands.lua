@@ -91,7 +91,7 @@ local M = setmetatable({}, {
 })
 M.__index = M
 ---@class NeotreeCommonCommands
-M.nowrap = {}
+M.async = {}
 ---@class NeotreeCommonCommands
 M.wrap1 = {}
 ---@class NeotreeCommonCommands
@@ -139,91 +139,84 @@ M.wrap2.add_directory = function(state, callback)
   return fs.create_directory(node.pathlib, state.dir, add_cb) or {}, node
 end
 
----Expand all nodes
----@param state table The state of the source
----@param node table A node to expand
----@param prefetcher table|nil an object with two methods `prefetch(state, node)` and `should_prefetch(node) => boolean`
-M.nowrap.expand_all_nodes = function(state, node, prefetcher)
-  error("DEPRECATED: WIP")
-  log.debug("Expanding all nodes under " .. node:get_id())
-  if prefetcher == nil then
-    prefetcher = node_expander.default_prefetcher
+---Expand all children of node recursively.
+---@param state NeotreeFiletree
+---@param node NuiTreeNode|nil
+M.async.expand_all_nodes = function(state, node)
+  node = node or state.tree:get_node() or state.tree:get_node(tostring(state.dir))
+  if not node then
+    return
   end
-
-  renderer.position.set(state, nil)
-
-  local task = function()
-    node_expander.expand_directory_recursively(state, node, prefetcher)
+  state:fill_tree(node:get_id(), nil)
+  for _, child in ipairs(state.__locals.get_node_list(state.tree, "bfs", node:get_id())) do
+    child:expand()
   end
-  async.run(task, function()
-    log.debug("All nodes expanded - redrawing")
+  node:expand()
+  return nio.wait(nio.run(function()
     renderer.redraw(state)
-  end)
+  end))
 end
 
-M.nowrap.close_node = function(state, callback)
-  local tree = state.tree
-  local node = tree:get_node()
-  local parent_node = tree:get_node(node:get_parent_id())
-  local target_node
-
-  if node:has_children() and node:is_expanded() then
-    target_node = node
-  else
-    target_node = parent_node
+---@param state NeotreeState
+---@param callback function|nil # The callback to call when the command is done. Called with the parent node as the argument.
+---@return NeotreeNodeId|nil target_id # The node_id where cursor will end up.
+M.wrap2.close_node = function(state, callback)
+  local node = state.tree:get_node() -- node at curline
+  if not node then
+    log.error("no node found under cursor")
+    return M.call(callback, nil)
   end
-
-  local root = tree:get_nodes()[1]
-  local is_root = target_node:get_id() == root:get_id()
-
-  if target_node and target_node:has_children() and not is_root then
-    target_node:collapse()
+  local target_id = node:get_parent_id()
+  if node:has_children() and node:is_expanded() then
+    target_id = node:get_id() -- if cursor is on an expanded dir, closing that dir makes more sense.
+  end
+  local root = state.tree:get_nodes()[1]
+  if root and (root:get_id() == target_id) then -- don't ever collapse root node
+    log.warn("don't collapse root node")
+    return M.call(callback, nil)
+  end
+  state:explicitly_collapse(node:get_id())
+  return nio.wait(nio.run(function()
+    state:focus_node(target_id)
     renderer.redraw(state)
-    renderer.focus_node(state, target_node:get_id())
-    if
-      state.explicitly_opened_directories
-      and state.explicitly_opened_directories[target_node:get_id()]
-    then
-      state.explicitly_opened_directories[target_node:get_id()] = false
-    end
-  end
+    return M.call(callback, target_id)
+  end))
 end
 
-M.nowrap.close_all_subnodes = function(state)
-  local tree = state.tree
-  local node = tree:get_node()
-  local parent_node = tree:get_node(node:get_parent_id())
-  local target_node
-
-  if node:has_children() and node:is_expanded() then
-    target_node = node
-  else
-    target_node = parent_node
+---Same as "close_node", but also recursively collapse
+---all subnodes, similar to "close_all_nodes".
+---@param state NeotreeState
+---@param callback function|nil # The callback to call when the command is done. Called with the parent node as the argument.
+---@return NeotreeNodeId|nil target_id # The node_id where cursor will end up.
+M.wrap2.close_all_subnodes = function(state, callback)
+  local node = state.tree:get_node() -- node at curline
+  if not node then
+    log.error("no node found under cursor")
+    return M.call(callback, nil)
   end
-
-  renderer.collapse_all_nodes(tree, target_node:get_id())
-  renderer.redraw(state)
-  renderer.focus_node(state, target_node:get_id())
-  if
-    state.explicitly_opened_directories
-    and state.explicitly_opened_directories[target_node:get_id()]
-  then
-    state.explicitly_opened_directories[target_node:get_id()] = false
+  for _, child_id in ipairs(state.__locals.get_node_id_list(state.tree, "bfs", node:get_id())) do
+    state:explicitly_collapse(child_id)
   end
+  return M.close_node(state, callback)
 end
 
-M.nowrap.close_all_nodes = function(state)
-  state.explicitly_opened_directories = {}
+---@param state NeotreeState
+---@param callback function|nil # The callback to call when the command is done. Called with the parent node as the argument.
+M.wrap2.close_all_nodes = function(state, callback)
   renderer.collapse_all_nodes(state.tree)
-  renderer.redraw(state)
+  state.explicitly_opened_directories = {}
+  return nio.wait(nio.run(function()
+    renderer.redraw(state)
+    return M.call(callback)
+  end))
 end
 
-M.nowrap.close_window = function(state)
+M.async.close_window = function(state)
   renderer.close(state)
 end
 
-M.nowrap.toggle_auto_expand_width = function(state)
-  if state.window.position == "float" then
+M.async.toggle_auto_expand_width = function(state)
+  if state.current_position == "float" or state.current_position == "current" then
     return
   end
   state.window.auto_expand_width = state.window.auto_expand_width == false
@@ -320,7 +313,7 @@ end
 -- Git commands
 --------------------------------------------------------------------------------
 
-M.nowrap.git_add_file = function(state)
+M.async.git_add_file = function(state)
   local node = state.tree:get_node()
   if node.type == "message" then
     return
@@ -331,13 +324,13 @@ M.nowrap.git_add_file = function(state)
   events.fire_event(events.GIT_EVENT)
 end
 
-M.nowrap.git_add_all = function(state)
+M.async.git_add_all = function(state)
   local cmd = { "git", "add", "-A" }
   vim.fn.system(cmd)
   events.fire_event(events.GIT_EVENT)
 end
 
-M.nowrap.git_commit = function(state, and_push)
+M.async.git_commit = function(state, and_push)
   local width = vim.fn.winwidth(0) - 2
   local row = vim.api.nvim_win_get_height(0) - 3
   local popup_options = {
@@ -371,11 +364,11 @@ M.nowrap.git_commit = function(state, and_push)
   end, popup_options)
 end
 
-M.nowrap.git_commit_and_push = function(state)
+M.async.git_commit_and_push = function(state)
   M.git_commit(state, true)
 end
 
-M.nowrap.git_push = function(state)
+M.async.git_push = function(state)
   inputs.confirm("Are you sure you want to push your changes?", function(yes)
     if yes then
       local result = vim.fn.systemlist({ "git", "push" })
@@ -385,7 +378,7 @@ M.nowrap.git_push = function(state)
   end)
 end
 
-M.nowrap.git_unstage_file = function(state)
+M.async.git_unstage_file = function(state)
   local node = state.tree:get_node()
   if node.type == "message" then
     return
@@ -396,7 +389,7 @@ M.nowrap.git_unstage_file = function(state)
   events.fire_event(events.GIT_EVENT)
 end
 
-M.nowrap.git_revert_file = function(state)
+M.async.git_revert_file = function(state)
   local node = state.tree:get_node()
   if node.type == "message" then
     return
@@ -416,7 +409,7 @@ end
 -- END Git commands
 --------------------------------------------------------------------------------
 
-M.nowrap.next_source = function(state)
+M.async.next_source = function(state)
   local sources = require("neo-tree").config.sources
   local sources = require("neo-tree").config.source_selector.sources
   local next_source = sources[1]
@@ -437,7 +430,7 @@ M.nowrap.next_source = function(state)
   })
 end
 
-M.nowrap.prev_source = function(state)
+M.async.prev_source = function(state)
   local sources = require("neo-tree").config.sources
   local sources = require("neo-tree").config.source_selector.sources
   local next_source = sources[#sources]
@@ -469,7 +462,7 @@ local function set_sort(state, label)
   state.sort = sort
 end
 
-M.nowrap.order_by_created = function(state)
+M.async.order_by_created = function(state)
   set_sort(state, "Created")
   state.sort_field_provider = function(node)
     local stat = utils.get_stat(node)
@@ -478,7 +471,7 @@ M.nowrap.order_by_created = function(state)
   require("neo-tree.sources.manager").refresh(state.name)
 end
 
-M.nowrap.order_by_modified = function(state)
+M.async.order_by_modified = function(state)
   set_sort(state, "Last Modified")
   state.sort_field_provider = function(node)
     local stat = utils.get_stat(node)
@@ -487,13 +480,13 @@ M.nowrap.order_by_modified = function(state)
   require("neo-tree.sources.manager").refresh(state.name)
 end
 
-M.nowrap.order_by_name = function(state)
+M.async.order_by_name = function(state)
   set_sort(state, "Name")
   state.sort_field_provider = nil
   require("neo-tree.sources.manager").refresh(state.name)
 end
 
-M.nowrap.order_by_size = function(state)
+M.async.order_by_size = function(state)
   set_sort(state, "Size")
   state.sort_field_provider = function(node)
     local stat = utils.get_stat(node)
@@ -502,7 +495,7 @@ M.nowrap.order_by_size = function(state)
   require("neo-tree.sources.manager").refresh(state.name)
 end
 
-M.nowrap.order_by_type = function(state)
+M.async.order_by_type = function(state)
   set_sort(state, "Type")
   state.sort_field_provider = function(node)
     return node.ext or node.type
@@ -510,7 +503,7 @@ M.nowrap.order_by_type = function(state)
   require("neo-tree.sources.manager").refresh(state.name)
 end
 
-M.nowrap.order_by_git_status = function(state)
+M.async.order_by_git_status = function(state)
   set_sort(state, "Git Status")
 
   state.sort_field_provider = function(node)
@@ -530,7 +523,7 @@ M.nowrap.order_by_git_status = function(state)
   require("neo-tree.sources.manager").refresh(state.name)
 end
 
-M.nowrap.order_by_diagnostics = function(state)
+M.async.order_by_diagnostics = function(state)
   set_sort(state, "Diagnostics")
 
   state.sort_field_provider = function(node)
@@ -549,11 +542,11 @@ M.nowrap.order_by_diagnostics = function(state)
   require("neo-tree.sources.manager").refresh(state.name)
 end
 
-M.nowrap.show_debug_info = function(state)
+M.async.show_debug_info = function(state)
   print(vim.inspect(state))
 end
 
-M.nowrap.show_file_details = function(state)
+M.async.show_file_details = function(state)
   local node = state.tree:get_node()
   if node.type == "message" then
     return
@@ -590,7 +583,7 @@ end
 ---@param callback function|nil
 ---@return NuiTreeNode|nil folder # Node where the files were pasted to. Nil when failed.
 ---@return PathlibPath[]|nil destinations # List of new paths.
-M.nowrap.paste_from_clipboard = function(state, callback)
+M.async.paste_from_clipboard = function(state, callback)
   if not state.clipboard then
     return M.call(callback)
   end
@@ -692,16 +685,16 @@ M.wrap3.delete_visual = function(state, selected_nodes, callback)
   return fs.delete_nodes(paths_to_delete, callback)
 end
 
-M.nowrap.preview = function(state)
+M.async.preview = function(state)
   Preview.show(state)
 end
 
-M.nowrap.revert_preview = function()
+M.async.revert_preview = function()
   Preview.hide()
 end
 --
 -- Multi-purpose function to back out of whatever we are in
-M.nowrap.cancel = function(state)
+M.async.cancel = function(state)
   if Preview.is_active() then
     Preview.hide()
   else
@@ -711,18 +704,18 @@ M.nowrap.cancel = function(state)
   end
 end
 
-M.nowrap.toggle_preview = function(state)
+M.async.toggle_preview = function(state)
   Preview.toggle(state)
 end
 
-M.nowrap.focus_preview = function()
+M.async.focus_preview = function()
   Preview.focus()
 end
 
 ---Expands or collapses the current node.
 ---@param state NeotreeState
 ---@param toggle_directory fun(node: NuiTree.Node)
-M.nowrap.toggle_node = function(state, toggle_directory)
+M.async.toggle_node = function(state, toggle_directory)
   log.time_it("common toggle_node")
   local node = state.tree:get_node()
   if not node or not utils.is_expandable(node) then
@@ -746,7 +739,7 @@ M.nowrap.toggle_node = function(state, toggle_directory)
 end
 
 ---Expands or collapses the current node.
-M.nowrap.toggle_directory = function(state, toggle_directory)
+M.async.toggle_directory = function(state, toggle_directory)
   local tree = state.tree
   local node = tree:get_node()
   if node.type ~= "directory" then
@@ -811,7 +804,7 @@ end
 ---@param state table The state of the source
 ---@param toggle_directory function The function to call to toggle a directory
 ---open/closed
-M.nowrap.open = function(state, toggle_directory)
+M.async.open = function(state, toggle_directory)
   open_with_cmd(state, "e", toggle_directory)
 end
 
@@ -819,7 +812,7 @@ end
 ---@param state table The state of the source
 ---@param toggle_directory function The function to call to toggle a directory
 ---open/closed
-M.nowrap.open_split = function(state, toggle_directory)
+M.async.open_split = function(state, toggle_directory)
   open_with_cmd(state, "split", toggle_directory)
 end
 
@@ -827,7 +820,7 @@ end
 ---@param state table The state of the source
 ---@param toggle_directory function The function to call to toggle a directory
 ---open/closed
-M.nowrap.open_vsplit = function(state, toggle_directory)
+M.async.open_vsplit = function(state, toggle_directory)
   open_with_cmd(state, "vsplit", toggle_directory)
 end
 
@@ -835,7 +828,7 @@ end
 ---@param state table The state of the source
 ---@param toggle_directory function The function to call to toggle a directory
 ---open/closed
-M.nowrap.open_rightbelow_vs = function(state, toggle_directory)
+M.async.open_rightbelow_vs = function(state, toggle_directory)
   open_with_cmd(state, "rightbelow vs", toggle_directory)
 end
 
@@ -843,7 +836,7 @@ end
 ---@param state table The state of the source
 ---@param toggle_directory function The function to call to toggle a directory
 ---open/closed
-M.nowrap.open_leftabove_vs = function(state, toggle_directory)
+M.async.open_leftabove_vs = function(state, toggle_directory)
   open_with_cmd(state, "leftabove vs", toggle_directory)
 end
 
@@ -851,7 +844,7 @@ end
 ---@param state table The state of the source
 ---@param toggle_directory function The function to call to toggle a directory
 ---open/closed
-M.nowrap.open_tabnew = function(state, toggle_directory)
+M.async.open_tabnew = function(state, toggle_directory)
   open_with_cmd(state, "tabnew", toggle_directory)
 end
 
@@ -859,7 +852,7 @@ end
 ---@param state table The state of the source
 ---@param toggle_directory function The function to call to toggle a directory
 ---open/closed
-M.nowrap.open_drop = function(state, toggle_directory)
+M.async.open_drop = function(state, toggle_directory)
   open_with_cmd(state, "drop", toggle_directory)
 end
 
@@ -867,7 +860,7 @@ end
 ---@param state table The state of the source
 ---@param toggle_directory function The function to call to toggle a directory
 ---open/closed
-M.nowrap.open_tab_drop = function(state, toggle_directory)
+M.async.open_tab_drop = function(state, toggle_directory)
   open_with_cmd(state, "tab drop", toggle_directory)
 end
 
@@ -927,21 +920,21 @@ local use_window_picker = function(state, path, cmd)
 end
 
 ---Marks potential windows with letters and will open the give node in the picked window.
-M.nowrap.open_with_window_picker = function(state, toggle_directory)
+M.async.open_with_window_picker = function(state, toggle_directory)
   open_with_cmd(state, "edit", toggle_directory, use_window_picker)
 end
 
 ---Marks potential windows with letters and will open the give node in a split next to the picked window.
-M.nowrap.split_with_window_picker = function(state, toggle_directory)
+M.async.split_with_window_picker = function(state, toggle_directory)
   open_with_cmd(state, "split", toggle_directory, use_window_picker)
 end
 
 ---Marks potential windows with letters and will open the give node in a vertical split next to the picked window.
-M.nowrap.vsplit_with_window_picker = function(state, toggle_directory)
+M.async.vsplit_with_window_picker = function(state, toggle_directory)
   open_with_cmd(state, "vsplit", toggle_directory, use_window_picker)
 end
 
-M.nowrap.show_help = function(state)
+M.async.show_help = function(state)
   local title = state.config and state.config.title or nil
   local prefix_key = state.config and state.config.prefix_key or nil
   help.show(state, title, prefix_key)
@@ -1005,10 +998,10 @@ end
 
 function M:_compile()
   self:_copy_from_parent()
-  for name, func in pairs(self.nowrap) do
+  for name, func in pairs(self.async) do
     self[name] = func
   end
-  self.nowrap = nil
+  self.async = nil
   local keys = vim.tbl_filter(function(key)
     return vim.startswith(key, "wrap") and (pcall(tonumber, key:sub(string.len("wrap") + 1)))
   end, vim.tbl_keys(self))

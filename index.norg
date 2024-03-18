@@ -4,7 +4,7 @@ description:
 authors: takuto
 categories:
 created: 2024-02-03T18:13:11+0900
-updated: 2024-03-12T14:12:09+0000
+updated: 2024-03-15T15:40:17+0000
 version: 1.1.1
 @end
 
@@ -17,17 +17,6 @@ version: 1.1.1
    - (x) `prepare_node(node) -> line` can return nil
    - (x) cache and fake depth for indent length
    - (x) merge_node_cache: `[parent.id] = depth`
-
-** Sort / Search
-
-   - (x) default sort when adding nodes
-   - (_) `self.overwrite_sort_function`
-   -- (x) instead keep track of previous algorithm
-   -- search score
-   -- order_by_*
-   - (x) `self:sort_tree(algorithm_name: string, sort_function: fun(a: node, b: node): boolean)`
-   -- (x) do nothing when name is the same as previous sort
-   - (x) tests
 
 ** Redraw
 

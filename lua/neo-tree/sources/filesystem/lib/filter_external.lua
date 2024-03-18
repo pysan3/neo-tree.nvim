@@ -24,91 +24,46 @@ local test_for_max_results = function(cmd)
   end
 end
 
-local get_find_command = function(state)
-  if state.find_command then
-    test_for_max_results(state.find_command)
-    return state.find_command
+M.get_find_command = function(find_command)
+  if find_command then
+    test_for_max_results(find_command)
+    return find_command
   end
 
   if 1 == vim.fn.executable("fdfind") then
-    state.find_command = "fdfind"
+    find_command = "fdfind"
   elseif 1 == vim.fn.executable("fd") then
-    state.find_command = "fd"
+    find_command = "fd"
   elseif 1 == vim.fn.executable("find") and vim.fn.has("win32") == 0 then
-    state.find_command = "find"
+    find_command = "find"
   elseif 1 == vim.fn.executable("where") then
-    state.find_command = "where"
+    find_command = "where"
   end
-
-  test_for_max_results(state.find_command)
-  return state.find_command
+  test_for_max_results(find_command)
+  return find_command
 end
 
-local running_jobs = Queue:new()
-local kill_job = function(job)
-  local pid = job.pid
-  job:shutdown()
-  if pid ~= nil and pid > 0 then
-    if utils.is_windows then
-      vim.fn.system("taskkill /F /T /PID " .. pid)
-    else
-      vim.fn.system("kill -9 " .. pid)
-    end
-  end
-  return true
+local get_find_command = function(state)
+  return M.get_find_command(state.find_command)
 end
 
-M.cancel = function()
-  if running_jobs:is_empty() then
-    return
-  end
-  running_jobs:for_each(kill_job)
-end
-
----@class FileTypes
----@field file boolean
----@field directory boolean
----@field symlink boolean
----@field socket boolean
----@field pipe boolean
----@field executable boolean
----@field empty boolean
----@field block boolean Only for `find`
----@field character boolean Only for `find`
-
----filter_files_external
--- Spawns a filter command based on `cmd`
----@param cmd string Command to execute. Use `get_find_command` most times.
----@param path string Base directory to start the search.
----@param glob string | nil If not nil, do glob search. Take precedence on `regex`
----@param regex string | nil If not nil, do regex search if command supports. if glob ~= nil, ignored
----@param full_path boolean If true, search agaist the absolute path
----@param types FileTypes | nil Return only true filetypes. If nil, all are returned.
----@param ignore { dotfiles: boolean?, gitignore: boolean? } If true, ignored from result. Default: false
----@param limit? integer | nil Maximim number of results. nil will return everything.
----@param find_args? string[] | table<string, string[]> Any additional options passed to command if any.
----@param on_insert? fun(err: string, line: string): any Executed for each line of stdout and stderr.
----@param on_exit? fun(return_val: table): any Executed at the end.
-M.filter_files_external = function(
-  cmd,
-  path,
-  glob,
-  regex,
-  full_path,
-  types,
-  ignore,
-  limit,
-  find_args,
-  on_insert,
-  on_exit
-)
+---Generate arguments for the find command for each OS and environment.
+---@param cmd "find"|"fdfind"|"fd"|"where"
+---@param path string # Cwd to execute command.
+---@param regex string|nil # One of regex or glob must be non-nil.
+---@param glob string|nil # One of regex or glob must be non-nil.
+---@param full_path boolean # Whether to match against full path.
+---@param types { directory?: boolean, file?: boolean, empty?: boolean, executable?: boolean }
+---@param ignore { dotfiles?: boolean, gitignore?: boolean } # Whether to include these in the result.
+---@param limit integer # Max number of returned files. May be ignored.
+---@param find_args NeotreeConfig.filesystem.find_args|nil (nil) List or a func that returns args for `find_command`
+---@return boolean success
+---@return string[] args
+M.make_args = function(cmd, path, regex, glob, full_path, types, ignore, limit, find_args)
   if glob ~= nil and regex ~= nil then
     local log_msg = string.format([[glob: %s, regex: %s]], glob, regex)
     log.warn("both glob and regex are set. glob will take precedence. " .. log_msg)
   end
-  ignore = ignore or {}
-  types = types or {}
-  limit = limit or math.huge -- math.huge == no limit
   local file_type_map = {
     file = "f",
     directory = "d",
@@ -154,9 +109,9 @@ M.filter_files_external = function(
       append("--no-ignore")
     end
     append("--color", "never")
-    if fd_supports_max_results and 0 < limit and limit < math.huge then
-      append("--max-results", limit)
-    end
+    -- if fd_supports_max_results and 0 < limit and limit < math.huge then
+    --   append("--max-results", limit)
+    -- end
     for k, v in pairs(types) do
       if v and file_type_map[k] ~= nil then
         append("--type", k)
@@ -215,9 +170,73 @@ M.filter_files_external = function(
     append_find_args()
     append("/r", path, glob or regex)
   else
-    return { "No search command found!" }
+    return false, { "No search command found!" }
   end
+  return true, args
+end
 
+local running_jobs = Queue:new()
+local kill_job = function(job)
+  local pid = job.pid
+  job:shutdown()
+  if pid ~= nil and pid > 0 then
+    if utils.is_windows then
+      vim.fn.system("taskkill /F /T /PID " .. pid)
+    else
+      vim.fn.system("kill -9 " .. pid)
+    end
+  end
+  return true
+end
+
+M.cancel = function()
+  if running_jobs:is_empty() then
+    return
+  end
+  running_jobs:for_each(kill_job)
+end
+
+---@class NeotreeFindFileTypes
+---@field file boolean|nil
+---@field directory boolean|nil
+---@field symlink boolean|nil
+---@field socket boolean|nil
+---@field pipe boolean|nil
+---@field executable boolean|nil
+---@field empty boolean|nil
+---@field block boolean|nil Only for `find`
+---@field character boolean|nil Only for `find`
+
+---filter_files_external
+-- Spawns a filter command based on `cmd`
+---@param cmd string Command to execute. Use `get_find_command` most times.
+---@param path string Base directory to start the search.
+---@param glob string | nil If not nil, do glob search. Take precedence on `regex`
+---@param regex string | nil If not nil, do regex search if command supports. if glob ~= nil, ignored
+---@param full_path boolean If true, search agaist the absolute path
+---@param types NeotreeFindFileTypes | nil Return only true filetypes. If nil, all are returned.
+---@param ignore { dotfiles: boolean?, gitignore: boolean? } If true, ignored from result. Default: false
+---@param limit? integer | nil Maximim number of results. nil will return everything.
+---@param find_args? string[] | table<string, string[]> Any additional options passed to command if any.
+---@param on_insert? fun(err: string, line: string): any Executed for each line of stdout and stderr.
+---@param on_exit? fun(return_val: table): any Executed at the end.
+M.filter_files_external = function(
+  cmd,
+  path,
+  glob,
+  regex,
+  full_path,
+  types,
+  ignore,
+  limit,
+  find_args,
+  on_insert,
+  on_exit
+)
+  ignore = ignore or {}
+  types = types or {}
+  limit = limit or math.huge -- math.huge == no limit
+  local args = M.make_args(cmd, path, glob, regex, full_path, types, ignore, limit, find_args)
   if fd_supports_max_results then
     limit = math.huge -- `fd` manages limit on its own
   end
@@ -252,7 +271,7 @@ M.filter_files_external = function(
   job:start()
 end
 
-local function fzy_sort_get_total_score(terms, path)
+M.fzy_sort_get_total_score = function(terms, path)
   local fzy = require("neo-tree.sources.common.filters.filter_fzy")
   local total_score = 0
   for _, term in ipairs(terms) do -- spaces in `opts.term` are treated as `and`
@@ -263,6 +282,11 @@ local function fzy_sort_get_total_score(terms, path)
     total_score = total_score + score
   end
   return total_score
+end
+
+---@deprecated
+local function fzy_sort_get_total_score(terms, path)
+  return M.fzy_sort_get_total_score(terms, path)
 end
 
 local function modify_parent_scores(result_scores, path, score)

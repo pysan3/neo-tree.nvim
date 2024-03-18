@@ -15,7 +15,7 @@ local M = setmetatable({}, {
 })
 M.__index = M
 ---@class NeotreeFiletreeCommands
-M.nowrap = {}
+M.async = {}
 ---@class NeotreeFiletreeCommands
 M.wrap1 = {}
 ---@class NeotreeFiletreeCommands
@@ -46,12 +46,14 @@ end
 
 ---Refresh the tree when something went wrong or is not updating correctly.
 ---@param state NeotreeFiletree
-M.nowrap.refresh = function(state)
-  error("TODO: V4 refactor: not implemented")
-  -- NOTE: Implement fill_tree and keep dirs opened.
-  for _, root in ipairs(state.tree:get_nodes()) do
-    state:remove_node_recursive(root:get_id())
+M.async.refresh = function(state)
+  error("WIP: move this to source:refresh()")
+  state:explicitly_save(true)
+  -- TODO: make sure all parents of each dir is also scanned <2024-03-14, pysan3>
+  for _, node_id in ipairs(vim.tbl_keys(state.explicitly_opened_directories)) do
+    state:fill_tree(node_id, 1)
   end
+  state:explicitly_restore(true)
   renderer.redraw(state)
 end
 
@@ -61,7 +63,7 @@ end
 
 ---Add a new node; create new file.
 ---@param state NeotreeFiletree
-M.nowrap.add = function(state)
+M.async.add = function(state)
   local add_result, folder = cc.add(state)
   for _, dest in ipairs(add_result) do
     assert(dest:exists(), string.format([[Failed to create %s]], dest))
@@ -73,7 +75,7 @@ end
 
 ---Add a new node; create new directory.
 ---@param state NeotreeFiletree
-M.nowrap.add_directory = function(state)
+M.async.add_directory = function(state)
   local add_result, folder = cc.add_directory(state)
   for _, dest in ipairs(add_result) do
     assert(dest:exists(), string.format([[Failed to create %s]], dest))
@@ -85,7 +87,7 @@ end
 
 ---Copy a file to a different destination.
 ---@param state NeotreeFiletree
-M.nowrap.copy = function(state)
+M.async.copy = function(state)
   local source, destination = cc.copy(state)
   if not source or not destination then
     return
@@ -97,7 +99,7 @@ end
 
 ---Move / rename a file to a different location.
 ---@param state NeotreeFiletree
-M.nowrap.move = function(state)
+M.async.move = function(state)
   local source, destination = cc.move(state)
   if not source or not destination then
     return
@@ -112,13 +114,13 @@ end
 
 ---Move / rename a file to a different location.
 ---@param state NeotreeFiletree
-M.nowrap.rename = function(state)
+M.async.rename = function(state)
   return M.move(state)
 end
 
 ---Delete a file or folder.
 ---@param state NeotreeFiletree
-M.nowrap.delete = function(state)
+M.async.delete = function(state)
   local deleted = cc.delete(state)
   log.debug(string.format([[#deleted: %s, %s]], #deleted, deleted))
   state:modify_tree(function()
@@ -132,7 +134,7 @@ end
 ---Delete items from tree. Only compatible with file system trees.
 ---@param state NeotreeFiletree
 ---@param selected_nodes NuiTreeNode[]
-M.nowrap.delete_visual = function(state, selected_nodes)
+M.async.delete_visual = function(state, selected_nodes)
   local deleted = cc.delete_visual(state, selected_nodes)
   log.debug(string.format([[#deleted: %s, %s]], #deleted, deleted))
   state:modify_tree(function()
@@ -149,26 +151,26 @@ end
 --          ╰─────────────────────────────────────────────────────────╯
 
 ---Marks node as copied, so that it can be pasted somewhere else.
-M.nowrap.copy_to_clipboard = function(state)
+M.async.copy_to_clipboard = function(state)
   cc.copy_to_clipboard(state, utils.wrap(redraw, state))
 end
 
-M.nowrap.copy_to_clipboard_visual = function(state, selected_nodes)
+M.async.copy_to_clipboard_visual = function(state, selected_nodes)
   cc.copy_to_clipboard_visual(state, selected_nodes, utils.wrap(redraw, state))
 end
 
 ---Marks node as cut, so that it can be pasted (moved) somewhere else.
-M.nowrap.cut_to_clipboard = function(state)
+M.async.cut_to_clipboard = function(state)
   cc.cut_to_clipboard(state, utils.wrap(redraw, state))
 end
 
-M.nowrap.cut_to_clipboard_visual = function(state, selected_nodes)
+M.async.cut_to_clipboard_visual = function(state, selected_nodes)
   cc.cut_to_clipboard_visual(state, selected_nodes, utils.wrap(redraw, state))
 end
 
 ---Pastes all items from the clipboard to the current directory.
 ---@param state NeotreeFiletree
-M.nowrap.paste_from_clipboard = function(state)
+M.async.paste_from_clipboard = function(state)
   local dest_folder, destinations = cc.paste_from_clipboard(state)
   destinations = destinations or {}
   log.time_it("paste_from_clipboard", dest_folder and dest_folder:get_id(), #destinations)
@@ -186,80 +188,64 @@ end
 --          ╰─────────────────────────────────────────────────────────╯
 
 ---@param state NeotreeFiletree
-M.nowrap.open = function(state)
+M.async.open = function(state)
   cc.open(state, utils.wrap(state.toggle_directory, state))
 end
 ---@param state NeotreeFiletree
-M.nowrap.open_split = function(state)
+M.async.open_split = function(state)
   cc.open_split(state, utils.wrap(state.toggle_directory, state))
 end
 ---@param state NeotreeFiletree
-M.nowrap.open_rightbelow_vs = function(state)
+M.async.open_rightbelow_vs = function(state)
   cc.open_rightbelow_vs(state, utils.wrap(state.toggle_directory, state))
 end
 ---@param state NeotreeFiletree
-M.nowrap.open_leftabove_vs = function(state)
+M.async.open_leftabove_vs = function(state)
   cc.open_leftabove_vs(state, utils.wrap(state.toggle_directory, state))
 end
 ---@param state NeotreeFiletree
-M.nowrap.open_vsplit = function(state)
+M.async.open_vsplit = function(state)
   cc.open_vsplit(state, utils.wrap(state.toggle_directory, state))
 end
 ---@param state NeotreeFiletree
-M.nowrap.open_tabnew = function(state)
+M.async.open_tabnew = function(state)
   cc.open_tabnew(state, utils.wrap(state.toggle_directory, state))
 end
 ---@param state NeotreeFiletree
-M.nowrap.open_drop = function(state)
+M.async.open_drop = function(state)
   cc.open_drop(state, utils.wrap(state.toggle_directory, state))
 end
 ---@param state NeotreeFiletree
-M.nowrap.open_tab_drop = function(state)
+M.async.open_tab_drop = function(state)
   cc.open_tab_drop(state, utils.wrap(state.toggle_directory, state))
 end
 
 ---@param state NeotreeFiletree
-M.nowrap.open_with_window_picker = function(state)
+M.async.open_with_window_picker = function(state)
   error("TODO: V4 refactor: not implemented")
   cc.open_with_window_picker(state, utils.wrap(fs.toggle_directory, state))
 end
 ---@param state NeotreeFiletree
-M.nowrap.split_with_window_picker = function(state)
+M.async.split_with_window_picker = function(state)
   error("TODO: V4 refactor: not implemented")
   cc.split_with_window_picker(state, utils.wrap(fs.toggle_directory, state))
 end
 ---@param state NeotreeFiletree
-M.nowrap.vsplit_with_window_picker = function(state)
+M.async.vsplit_with_window_picker = function(state)
   error("TODO: V4 refactor: not implemented")
   cc.vsplit_with_window_picker(state, utils.wrap(fs.toggle_directory, state))
 end
 
----Expand all children of node recursively.
----@param state NeotreeFiletree
----@param node NuiTreeNode|nil
-M.nowrap.expand_all_nodes = function(state, node)
-  node = node or state.tree:get_node() or state.tree:get_node(tostring(state.dir))
-  if not node then
-    return
-  end
-  state:fill_tree(node:get_id(), nil)
-  for _, child in ipairs(state.__locals.get_node_list(state.tree, node:get_id())) do
-    child:expand()
-  end
-  node:expand()
-  redraw(state)
-end
-
 ---Open or close a node when it is expandable. Does nothing otherwise.
 ---@param state NeotreeFiletree
-M.nowrap.toggle_node = function(state)
+M.async.toggle_node = function(state)
   cc.toggle_node(state, function(node)
     state:toggle_directory(node, node.pathlib, false)
   end)
 end
 
 ---Toggles whether hidden files are shown or not.
-M.nowrap.toggle_hidden = function(state)
+M.async.toggle_hidden = function(state)
   error("TODO: V4 refactor: not implemented")
   state.filtered_items.visible = not state.filtered_items.visible
   log.info("Toggling hidden files: " .. tostring(state.filtered_items.visible))
@@ -267,7 +253,7 @@ M.nowrap.toggle_hidden = function(state)
 end
 
 ---Toggles whether the tree is filtered by gitignore or not.
-M.nowrap.toggle_gitignore = function(state)
+M.async.toggle_gitignore = function(state)
   error("TODO: V4 refactor: not implemented")
   log.warn("`toggle_gitignore` has been removed, running toggle_hidden instead.")
   M.toggle_hidden(state)
@@ -277,43 +263,44 @@ end
 --          │                    Search Operations                    │
 --          ╰─────────────────────────────────────────────────────────╯
 
-M.nowrap.clear_filter = function(state)
-  error("TODO: V4 refactor: not implemented")
-  fs.reset_search(state, true)
+---Clear searched result.
+---@param state NeotreeState
+M.async.clear_filter = function(state)
+  state:search_end()
 end
 
 ---Shows the filter input, which will filter the tree.
-M.nowrap.filter_as_you_type = function(state)
+M.async.filter_as_you_type = function(state)
   error("TODO: V4 refactor: not implemented")
   filter.show_filter(state, true)
 end
 
 ---Shows the filter input, which will filter the tree.
-M.nowrap.filter_on_submit = function(state)
+M.async.filter_on_submit = function(state)
   error("TODO: V4 refactor: not implemented")
   filter.show_filter(state, false)
 end
 
 ---Shows the filter input in fuzzy finder mode.
-M.nowrap.fuzzy_finder = function(state)
+M.async.fuzzy_finder = function(state)
   error("TODO: V4 refactor: not implemented")
   filter.show_filter(state, true, true)
 end
 
 ---Shows the filter input in fuzzy finder mode.
-M.nowrap.fuzzy_finder_directory = function(state)
+M.async.fuzzy_finder_directory = function(state)
   error("TODO: V4 refactor: not implemented")
   filter.show_filter(state, true, "directory")
 end
 
 ---Shows the filter input in fuzzy sorter
-M.nowrap.fuzzy_sorter = function(state)
-  error("TODO: V4 refactor: not implemented")
+---@param state NeotreeFiletree
+M.async.fuzzy_sorter = function(state)
   filter.show_filter(state, true, true, true)
 end
 
 ---Shows the filter input in fuzzy sorter with only directories
-M.nowrap.fuzzy_sorter_directory = function(state)
+M.async.fuzzy_sorter_directory = function(state)
   error("TODO: V4 refactor: not implemented")
   filter.show_filter(state, true, "directory", true)
 end
@@ -372,12 +359,12 @@ local focus_next_git_modified = function(state, reverse)
   end
 end
 
-M.nowrap.next_git_modified = function(state)
+M.async.next_git_modified = function(state)
   error("TODO: V4 refactor: not implemented")
   focus_next_git_modified(state, false)
 end
 
-M.nowrap.prev_git_modified = function(state)
+M.async.prev_git_modified = function(state)
   error("TODO: V4 refactor: not implemented")
   focus_next_git_modified(state, true)
 end
@@ -387,7 +374,7 @@ end
 --          ╰─────────────────────────────────────────────────────────╯
 
 ---Navigate up one level.
-M.nowrap.navigate_up = function(state)
+M.async.navigate_up = function(state)
   error("TODO: V4 refactor: not implemented")
   local parent_path, _ = utils.split_path(state.path)
   if not utils.truthy(parent_path) then
@@ -405,7 +392,7 @@ M.nowrap.navigate_up = function(state)
   fs._navigate_internal(state, parent_path, path_to_reveal, nil, false)
 end
 
-M.nowrap.set_root = function(state)
+M.async.set_root = function(state)
   error("TODO: V4 refactor: not implemented")
   local tree = state.tree
   local node = tree:get_node()

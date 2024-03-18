@@ -13,7 +13,7 @@
 ---@field file string # expanded value of `<afile>`
 ---@field data any # arbitrary data passed from `nvim_exec_autocmds()`
 
----@alias NeotreeTypes.sort_function fun(a: NeotreeNode, b: NeotreeNode): boolean
+---@alias NeotreeTypes.sort_function fun(a: NeotreeNode, b: NeotreeNode, reverse: boolean): boolean
 ---@alias NeotreeConfig.highlight string # Name of a highlight group
 ---@alias NeotreeConfig.wh integer|string|(fun(node: NuiTreeNode|NeotreeSourceItem, state:NeotreeState): number)|nil
 ---@alias NeotreeConfig.log_level "trace"|"debug"|"info"|"warn"|"error"|"fatal"

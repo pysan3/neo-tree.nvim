@@ -378,6 +378,95 @@ function Manager:get_tabid(tabid)
     or vim.api.nvim_get_current_tabpage()
 end
 
+--          ╭─────────────────────────────────────────────────────────╮
+--          │                   Search / Fuzzy Find                   │
+--          ╰─────────────────────────────────────────────────────────╯
+
+---Open a popup window at the bottom to search through the tree.
+---@param state NeotreeState
+---@param search_as_you_type boolean|nil # Filter and rerender tree for each key update.
+---@param fuzzy_finder_mode "directory"|"file"|"empty"|"executable"
+---@param use_fzy boolean|nil # Use fzy algorithm to sort nodes.
+function Manager:show_filter(state, search_as_you_type, fuzzy_finder_mode, use_fzy)
+  use_fzy = use_fzy and true or false
+  local posid = self:search_win_by_state_id(state.id)
+  local window = posid and self.window_lookup[posid]
+  if not window or not window.winid or not vim.api.nvim_win_is_valid(window.winid) then
+    return
+  end
+  local winheight = vim.api.nvim_win_get_height(window.winid)
+  local popup_msg = "Search:"
+  if search_as_you_type then
+    popup_msg = ([[Filter%s:]]):format(fuzzy_finder_mode == "directory" and " Directories" or "")
+  end
+  local winwidth = vim.api.nvim_win_get_width(window.winid)
+  local popup_options = popups.popup_options(popup_msg, winwidth, {
+    relative = "win",
+    winid = window.winid,
+    position = { row = winheight - 2, col = 0 },
+    size = winwidth,
+  })
+  state:explicitly_save(true)
+  state._tree_in_search = true
+  local default_value = state.search_pattern
+  local waiting_initalize = true
+  local mode = fuzzy_finder_mode or "file"
+  local types = { directory = mode == "directory", file = mode ~= "directory" }
+  local TASK_NAME = "__search"
+  local function error_callback(suc, _)
+    return suc or state._tree_lock.release()
+  end
+  local input = require("nui.input")(popup_options, {
+    prompt = " ",
+    default_value = default_value,
+    on_submit = function(term)
+      state:cancel_all_tasks(TASK_NAME)
+      state:add_task(function()
+        if not term or #term == 0 or search_as_you_type then -- search_as_you_type mode: end search and go back to normal
+          state:search_end()
+        else -- not search_as_you_type: start search
+          state:search_tree(self, winwidth, term, use_fzy, types)
+        end
+      end, TASK_NAME, error_callback)
+    end,
+    on_change = function(term)
+      if not search_as_you_type or not term or #term <= 1 then
+        return
+      elseif waiting_initalize and default_value and vim.startswith(default_value, term) then
+        return -- nui is typing the default value...
+      end
+      state:cancel_all_tasks(TASK_NAME)
+      waiting_initalize = false
+      state:add_task(function()
+        state:search_tree(self, winwidth, term, use_fzy, types)
+      end, TASK_NAME, error_callback)
+    end,
+  })
+  -- Map special keybinds
+  input:map("i", "<Esc>", function()
+    vim.cmd.stopinsert()
+    input:unmount()
+    nio.run(function()
+      state:search_end()
+    end)
+  end, { noremap = true })
+  input:map("i", "<C-w>", "<C-S-w>")
+  input:on({ "BufLeave", "BufDelete" }, function()
+    vim.cmd.stopinsert()
+    input:unmount()
+    nio.run(function()
+      state:search_end()
+    end)
+  end, { once = true })
+  -- if fuzzy_finder_mode then
+  --   for lhs, cmd_name in pairs(state.window.fuzzy_finder_mappings) do
+  --     vim.print(lhs)
+  --   end
+  -- end
+  input:mount()
+  return input
+end
+
 -- ╭─────────────────────────────────────────────────────────╮
 -- │                    Window Management                    │
 -- ╰─────────────────────────────────────────────────────────╯
