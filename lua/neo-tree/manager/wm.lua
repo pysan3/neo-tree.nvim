@@ -29,7 +29,9 @@ function M.get_highlight_string()
       "VertSplit:NeoTreeVertSplit",
       "EndOfBuffer:NeoTreeEndOfBuffer",
     }
-    if vim.version and vim.version.ge(vim.version(), { 0, 7, 0 }) then
+    if vim.version and vim.version.ge and vim.version.ge(vim.version(), { 0, 10, 0 }) then
+      table.insert(result, "WinSeparator:NeoTreeWinSeparator")
+    elseif vim.version and vim.version().minor >= 7 then -- same as above but for >=0.7.0,<0.10.0 (vim.version.ge does not exist)
       table.insert(result, "WinSeparator:NeoTreeWinSeparator")
     end
     M.highlight_string = table.concat(result, ",")
