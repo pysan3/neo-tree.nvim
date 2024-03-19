@@ -574,35 +574,39 @@ end
 ---@param force_unmount boolean|nil # `window:unmount()` instead of `window:hide()`.
 function Manager:close_win(posid, force_unmount)
   local window = posid and self.window_lookup[posid]
-  if window then
-    local state_id = self.position_state[posid]
-    self.position_state[posid] = nil
-    if self.global_position_state[posid] == state_id then
-      self.global_position_state[posid] = nil
-    end
-    local target_window, _ = self:get_appropriate_window()
-    if window.winid and window.winid == target_window and locals.pos_is_fixed(posid) then
-      -- cannot close last window, so make a split first
-      local new_split = vim.api.nvim_open_win(0, false, { split = "left", win = 0 })
-      self.previous_windows:append(new_split)
-      force_unmount = true
-    end
-    if force_unmount then
-      window:unmount() ---@diagnostic disable-line -- lua_ls cannot correctly detect interfaces.
-      self.window_lookup[posid] = nil
-      self.__window_lookup_cache[window.winid or -1] = nil
-    elseif not locals.pos_is_fixed(posid) or not vim.api.nvim_buf_is_loaded(window.bufnr) then
-      return self:close_win(posid, true)
-    else
-      window:hide() ---@diagnostic disable-line -- lua_ls cannot correctly detect interfaces.
-    end
-    while self.previous_windows:len() > 0 do
-      local prev = self.previous_windows:popright()
-      if prev and vim.api.nvim_win_is_valid(prev) then
-        self.previous_windows:append(prev) -- put it back
-        vim.api.nvim_set_current_win(prev)
-        break
-      end
+  if not window then
+    return
+  end
+  local state_id = self.position_state[posid]
+  self.position_state[posid] = nil
+  if self.global_position_state[posid] == state_id then
+    self.global_position_state[posid] = nil
+  end
+  if not force_unmount and not vim.api.nvim_win_is_valid(window.winid or -1) then
+    return -- window is already closed
+  end
+  local target_window, _ = self:get_appropriate_window()
+  if window.winid and window.winid == target_window and locals.pos_is_fixed(posid) then
+    -- cannot close last window, so make a split first
+    local new_split = vim.api.nvim_open_win(0, false, { split = "left", win = 0 })
+    self.previous_windows:append(new_split)
+    force_unmount = true
+  end
+  if force_unmount then
+    window:unmount() ---@diagnostic disable-line -- lua_ls cannot correctly detect interfaces.
+    self.window_lookup[posid] = nil
+    self.__window_lookup_cache[window.winid or -1] = nil
+  elseif not locals.pos_is_fixed(posid) or not vim.api.nvim_buf_is_loaded(window.bufnr) then
+    return self:close_win(posid, true)
+  else
+    window:hide() ---@diagnostic disable-line -- lua_ls cannot correctly detect interfaces.
+  end
+  while self.previous_windows:len() > 0 do
+    local prev = self.previous_windows:popright()
+    if prev and vim.api.nvim_win_is_valid(prev) then
+      self.previous_windows:append(prev) -- put it back
+      vim.api.nvim_set_current_win(prev)
+      break
     end
   end
 end
@@ -690,9 +694,11 @@ function Manager:on_buf_win_enter()
   local posid = self:search_win_by_winid(current_winid)
   if
     utils.is_floating(current_winid)
-    or posid and vim.tbl_contains(e.valid_float_window_positions, posid)
+    and vim.bo.filetype
+    and vim.startswith(vim.bo.filetype, "neo-tree")
   then
     return
+  elseif posid and vim.tbl_contains(e.valid_float_window_positions, posid) then
   else
     self:close_win(e.valid_window_positions.FLOAT)
     if not posid then
