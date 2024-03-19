@@ -4,7 +4,7 @@ description:
 authors: takuto
 categories:
 created: 2024-02-03T18:13:11+0900
-updated: 2024-03-19T14:18:36+0000
+updated: 2024-03-19T14:45:54+0000
 version: 1.1.1
 @end
 
@@ -22,3 +22,22 @@ version: 1.1.1
 
    Postpone redraw and use `state.redraw_request`.
 
+** Git Status
+
+   Git status detection is still flaky and the code is very nasty.
+   - ( ) fix `path.git_status` detection
+   - ( ) fix visualization (what icon to choose)
+   - ( ) refactor code
+   -- ( ) make it more clean
+
+** Commands
+   - ( ) toggle hidden
+   - ( ) toggle ignored
+
+** Other Sources
+   - ( ) refactor code
+   - ( ) write docs to summarize API
+   - ( ) port other sources to new API
+   -- ( ) buffers
+   -- ( ) git_status
+   -- ( ) document_symbols
