@@ -142,17 +142,17 @@ We now have an upstream issue that `nvim_buf_set_lines` (used inside `NuiTree:re
 
 - [ ] rewrite `common/commands`
   - [ ] `i`: `show_file_details`
-  - [ ] `o`: `show_help`
-    - [ ] `oc`: `order_by_created`
-    - [ ] `od`: `order_by_diagnostics`
-    - [ ] `ot`: `order_by_type`
-    - [ ] `og`: `order_by_git_status`
-    - [ ] `om`: `order_by_modified`
-    - [ ] `os`: `order_by_size`
-  - [ ] `<esc>`: `cancel`
+  - [x] `o`: `show_help`
+    - [x] `oc`: `order_by_created`
+    - [x] `od`: `order_by_diagnostics`
+    - [x] `ot`: `order_by_type`
+    - [x] `og`: `order_by_git_status`
+    - [x] `om`: `order_by_modified`
+    - [x] `os`: `order_by_size`
+  - [x] `<esc>`: `cancel`
   - [ ] `>`: `next_source`
   - [ ] `<`: `prev_source`
-  - [ ] `?`: `show_help`
+  - [x] `?`: `show_help`
   - [ ] `e`: `toggle_auto_expand_width`
   - [ ] `P`: `toggle_preview`
   - [x] `q`: `close_window`
@@ -199,11 +199,17 @@ Implement a unified API to be able to search through the nodes of the tree. Mayb
 - [x] default sort when adding nodes
 - [ ] `self.overwrite_sort_function`
   - [x] instead keep track of previous algorithm
-  - search score
-  - order\_by\_\*
+  - [x] search score
+  - [x] order\_by\_\*
 - [x] `self:sort_tree(algorithm_name: string, sort_function: fun(a: node, b: node): boolean)`
   - [x] do nothing when name is the same as previous sort
 - [ ] tests
+
+### Order By...
+
+- [x] Work on `order_by_*` commands.
+- [x] Reimplement help page.
+  - [x] Rewrite the whole thing cuz the current implementation is a mess.
 
 ## 🔳 Event Handlers
 

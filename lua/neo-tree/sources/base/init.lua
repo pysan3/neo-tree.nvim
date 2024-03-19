@@ -49,8 +49,13 @@ local locals = {} -- Functions exported for test purposes
 ---@field func NeotreeTypes.sort_function # Sort function
 ---@field reverse boolean # Whether the sort result should be reversed
 ---@field one_time boolean|nil # If true, this algorithm will be forgotten when overwritten by other sort function.
----@field force boolean|nil # Force run the sort
 ---@field __previous NeotreeStateSortInfo|nil # Previous sort method.
+
+---@class NeotreeStateSortArgs : NeotreeStateSortInfo
+---@field name nil
+---@field func nil
+---@field force boolean|nil # Force run the sort
+---@field flip boolean|nil # If previous sort is same, reverse the reverse state.
 
 ---@class NeotreeStateRenderArgs
 ---@field longest_node integer # Width required to show the longest node.
@@ -685,18 +690,19 @@ end
 ---same algorithm once again.
 ---When the algorithm is different from previous, deep sort in performed and previous sort is cleared.
 ---@param algorithm_name string # Give a unique name of the sorting algorithm.
----@param opts NeotreeStateSortInfo # Additional opts for sorting.
----@param sort_function fun(a: NuiTreeNode, b: NuiTreeNode): boolean
----@overload fun(self: NeotreeState, algorithm_name: NeotreeSortName, opts: NeotreeStateSortInfo) # Use pre-defined functions.
+---@param opts NeotreeStateSortArgs # Additional opts for sorting.
+---@param sort_function NeotreeTypes.sort_function
+---@overload fun(self: NeotreeState, algorithm_name: NeotreeSortName, opts: NeotreeStateSortArgs) # Use pre-defined functions.
 function Source:sort_tree(algorithm_name, opts, sort_function)
   local reverse = opts.reverse and true or false
+  local prev = self.sort_info
   if not sort_function then
     local pre_defined = require("neo-tree.sources.base.sort").pre_defined
     assert(pre_defined[algorithm_name], algorithm_name .. " is not found in pre-defined.")
     sort_function = pre_defined[algorithm_name]
   end
   local task_name = "__sort_tree_" .. algorithm_name
-  if not self.sort_info or self.sort_info.name ~= algorithm_name or opts.force then
+  if not prev or prev.name ~= algorithm_name or opts.force then
     -- deep sort tree
     self:modify_tree(function(tree)
       local node_table = locals.get_node_table(tree)
@@ -709,7 +715,7 @@ function Source:sort_tree(algorithm_name, opts, sort_function)
       end
       self:wait_all_tasks(task_name)
     end)
-  elseif self.sort_info.name == algorithm_name and self.sort_info.reverse ~= reverse then
+  elseif prev.name == algorithm_name and (prev.reverse ~= reverse or opts.flip) then
     -- reverse tree
     self:modify_tree(function(tree)
       local node_table = locals.get_node_table(tree)
@@ -722,7 +728,8 @@ function Source:sort_tree(algorithm_name, opts, sort_function)
       end
       self:wait_all_tasks(task_name)
     end)
-  elseif self.sort_info.force then
+    reverse = not prev.reverse
+  elseif prev.force then
     -- identical but force is true. retry with force enabled
     opts.force = true
     return self:sort_tree(algorithm_name, opts, sort_function)
@@ -730,17 +737,18 @@ function Source:sort_tree(algorithm_name, opts, sort_function)
     return -- identical, do nothing
   end
   self:wait_all_tasks(task_name)
-  local prev = self.sort_info
-  if self.sort_info and self.sort_info.one_time then
-    prev = self.sort_info.__previous
-  end
   self.sort_info = {
     name = algorithm_name,
     func = sort_function,
     reverse = reverse,
     one_time = opts.one_time,
-    __previous = prev,
+    -- if prev.one_time is true, set __previous to the one prior to prev and forget about it.
+    __previous = (prev and not prev.one_time) and prev or prev.__previous,
   }
+  if self.sort_info.__previous then
+    -- free memory for previous previous sort
+    self.sort_info.__previous.__previous = nil
+  end
 end
 
 ---Go back to previous sort method.
@@ -762,10 +770,12 @@ end
 function Source.sort_node(node, child_lookup, func, reverse)
   reverse = not not reverse
   table.sort(node._child_ids, function(a, b)
-    if not child_lookup[a] or not child_lookup[b] then
-      return (not not child_lookup[a]) ~= reverse
+    local _a = child_lookup[a]
+    local _b = child_lookup[b]
+    if not _a or not _b then
+      return (not not _a) ~= reverse
     else
-      return func(child_lookup[a], child_lookup[b], reverse)
+      return func(_a, _b, reverse)
     end
   end)
 end

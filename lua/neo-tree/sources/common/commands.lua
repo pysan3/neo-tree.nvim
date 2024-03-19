@@ -502,47 +502,9 @@ M.async.move_cursor_down = function(state)
   return M.move_cursor_rel(state, 1)
 end
 
-M.async.next_source = function(state)
-  local sources = require("neo-tree").config.sources
-  local sources = require("neo-tree").config.source_selector.sources
-  local next_source = sources[1]
-  for i, source_info in ipairs(sources) do
-    if source_info.source == state.name then
-      next_source = sources[i + 1]
-      if not next_source then
-        next_source = sources[1]
-      end
-      break
-    end
-  end
-
-  require("neo-tree.command").execute({
-    source = next_source.source,
-    position = state.current_position,
-    action = "focus",
-  })
-end
-
-M.async.prev_source = function(state)
-  local sources = require("neo-tree").config.sources
-  local sources = require("neo-tree").config.source_selector.sources
-  local next_source = sources[#sources]
-  for i, source_info in ipairs(sources) do
-    if source_info.source == state.name then
-      next_source = sources[i - 1]
-      if not next_source then
-        next_source = sources[#sources]
-      end
-      break
-    end
-  end
-
-  require("neo-tree.command").execute({
-    source = next_source.source,
-    position = state.current_position,
-    action = "focus",
-  })
-end
+--          ╭─────────────────────────────────────────────────────────╮
+--          │                      Order By ...                       │
+--          ╰─────────────────────────────────────────────────────────╯
 
 local function set_sort(state, label)
   local sort = state.sort or { label = "Name", direction = -1 }
@@ -555,68 +517,77 @@ local function set_sort(state, label)
   state.sort = sort
 end
 
-M.async.order_by_created = function(state)
-  set_sort(state, "Created")
-  state.sort_field_provider = function(node)
-    local stat = utils.get_stat(node)
-    return stat.birthtime and stat.birthtime.sec or 0
+---Deep sort the tree with algorithm. Caches previous sort algorithm so result can be reused when called with
+---same algorithm once again.
+---When the algorithm is different from previous, deep sort in performed and previous sort is cleared.
+---@param state NeotreeState
+---@param algorithm_name string # Give a unique name of the sorting algorithm.
+---@param opts NeotreeStateSortArgs|nil # Additional opts for sorting.
+---@param sort_function NeotreeTypes.sort_function
+---@overload fun(state: NeotreeState, algorithm_name: NeotreeSortName, opts: NeotreeStateSortArgs|nil) # Use pre-defined functions.
+local function order_by(state, algorithm_name, opts, sort_function)
+  opts = opts or { flip = true }
+  local focused_node = state.tree and state.tree:get_node()
+  if sort_function then
+    state:sort_tree(algorithm_name, opts, sort_function)
+  else
+    state:sort_tree(algorithm_name, opts)
   end
-  require("neo-tree.sources.manager").refresh(state.name)
+  state:focus_node(focused_node and focused_node:get_id())
+  renderer.redraw(state)
 end
 
-M.async.order_by_modified = function(state)
-  set_sort(state, "Last Modified")
-  state.sort_field_provider = function(node)
-    local stat = utils.get_stat(node)
-    return stat.mtime and stat.mtime.sec or 0
-  end
-  require("neo-tree.sources.manager").refresh(state.name)
-end
-
-M.async.order_by_name = function(state)
-  set_sort(state, "Name")
-  state.sort_field_provider = nil
-  require("neo-tree.sources.manager").refresh(state.name)
-end
-
-M.async.order_by_size = function(state)
-  set_sort(state, "Size")
-  state.sort_field_provider = function(node)
-    local stat = utils.get_stat(node)
-    return stat.size or 0
-  end
-  require("neo-tree.sources.manager").refresh(state.name)
-end
-
-M.async.order_by_type = function(state)
-  set_sort(state, "Type")
-  state.sort_field_provider = function(node)
-    return node.ext or node.type
-  end
-  require("neo-tree.sources.manager").refresh(state.name)
-end
-
-M.async.order_by_git_status = function(state)
-  set_sort(state, "Git Status")
-
-  state.sort_field_provider = function(node)
-    local git_status_lookup = state.git_status_lookup or {}
-    local git_status = git_status_lookup[node.path]
-    if git_status then
-      return git_status
-    end
-
-    if node.filtered_by and node.filtered_by.gitignored then
-      return "!!"
+---Make your own sorting keybind.
+---@param state NeotreeState
+M.async.order_by_my_sort = function(state)
+  -- "my_sort"  : give your algorithm a unique name
+  -- flip = true: means to reverse the order then called the second time.
+  return order_by(state, "my_sort", { flip = true }, function(a, b, reverse)
+    ---@cast a NeotreeNode
+    ---@cast b NeotreeNode
+    ---@cast reverse boolean # If true return `a < b`, else return `b < a`
+    if not reverse then
+      return a < b
     else
-      return ""
+      return b < a
     end
-  end
-
-  require("neo-tree.sources.manager").refresh(state.name)
+  end)
 end
 
+---@param state NeotreeState
+M.async.order_by_created = function(state)
+  return order_by(state, "path_created")
+end
+
+---@param state NeotreeState
+M.async.order_by_modified = function(state)
+  return order_by(state, "path_modified")
+end
+
+---@param state NeotreeState
+M.async.order_by_name = function(state)
+  return order_by(state, "path_name")
+end
+
+---@param state NeotreeState
+M.async.order_by_size = function(state)
+  return order_by(state, "path_size")
+end
+
+---@param state NeotreeState
+M.async.order_by_type = function(state)
+  return order_by(state, "path_type")
+end
+
+---@param state NeotreeState
+M.async.order_by_git_status = function(state)
+  return order_by(state, "path_git_status")
+end
+
+--- TODO: WIP <2024-03-18, pysan3>
+---@param state NeotreeState
 M.async.order_by_diagnostics = function(state)
+  error("WIP: not implemented yet")
   set_sort(state, "Diagnostics")
 
   state.sort_field_provider = function(node)
@@ -669,6 +640,48 @@ M.async.show_file_details = function(state)
   end
 
   popups.alert("File Details", lines)
+end
+
+M.async.next_source = function(state)
+  local sources = require("neo-tree").config.sources
+  local sources = require("neo-tree").config.source_selector.sources
+  local next_source = sources[1]
+  for i, source_info in ipairs(sources) do
+    if source_info.source == state.name then
+      next_source = sources[i + 1]
+      if not next_source then
+        next_source = sources[1]
+      end
+      break
+    end
+  end
+
+  require("neo-tree.command").execute({
+    source = next_source.source,
+    position = state.current_position,
+    action = "focus",
+  })
+end
+
+M.async.prev_source = function(state)
+  local sources = require("neo-tree").config.sources
+  local sources = require("neo-tree").config.source_selector.sources
+  local next_source = sources[#sources]
+  for i, source_info in ipairs(sources) do
+    if source_info.source == state.name then
+      next_source = sources[i - 1]
+      if not next_source then
+        next_source = sources[#sources]
+      end
+      break
+    end
+  end
+
+  require("neo-tree.command").execute({
+    source = next_source.source,
+    position = state.current_position,
+    action = "focus",
+  })
 end
 
 ---Pastes all items from the clipboard to the current directory.
@@ -1030,9 +1043,13 @@ end
 ---Show help which lists all keybinds available in current window.
 ---@param state NeotreeState
 M.async.show_help = function(state)
-  local title = state.config and state.config.title or nil
-  local prefix_key = state.config and state.config.prefix_key or nil
-  local close_keys = state.config and state.config.close_keys or {}
+  -- HACK: state.config is used for oneshot keymap config as well. Clear the values.
+  ---@diagnostic disable start
+  local title, prefix_key, close_keys
+  state.config.title, title = nil, state.config.title
+  state.config.prefix_key, prefix_key = nil, state.config.prefix_key
+  state.config.close_keys, close_keys = nil, state.config.close_keys
+  ---@diagnostic disable end
   require("neo-tree.manager.help").show(state, title, prefix_key, close_keys)
 end
 

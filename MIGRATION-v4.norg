@@ -4,7 +4,7 @@ description: A migration guideline to neo-tree v4 for developers and a TODO list
 authors: takuto
 categories:
 created: 2024-02-19T16:25:02+0900
-updated: 2024-03-18T22:20:04+0000
+updated: 2024-03-19T14:19:10+0000
 version: 1.1.1
 @end
 
@@ -157,19 +157,19 @@ version: 1.1.1
 
 *** Keybind Commands
 
-    - ( ) rewrite `common/commands`
+    - (-) rewrite `common/commands`
     -- ( ) `i`:  `show_file_details`
-    -- ( ) `o`:  `show_help`
-    --- ( ) `oc`:  `order_by_created`
-    --- ( ) `od`:  `order_by_diagnostics`
-    --- ( ) `ot`:  `order_by_type`
-    --- ( ) `og`:  `order_by_git_status`
-    --- ( ) `om`:  `order_by_modified`
-    --- ( ) `os`:  `order_by_size`
-    -- ( ) `<esc>`: `cancel`
+    -- (x) `o`:  `show_help`
+    --- (x) `oc`:  `order_by_created`
+    --- (x) `od`:  `order_by_diagnostics`
+    --- (x) `ot`:  `order_by_type`
+    --- (x) `og`:  `order_by_git_status`
+    --- (x) `om`:  `order_by_modified`
+    --- (x) `os`:  `order_by_size`
+    -- (x) `<esc>`: `cancel`
     -- ( ) `\>`:  `next_source`
     -- ( ) `\<`:  `prev_source`
-    -- ( ) `?`:  `show_help`
+    -- (x) `?`:  `show_help`
     -- (_) `e`:  `toggle_auto_expand_width`
     -- ( ) `P`:  `toggle_preview`
     -- (x) `q`:  `close_window`
@@ -213,11 +213,17 @@ version: 1.1.1
    - (x) default sort when adding nodes
    - (_) `self.overwrite_sort_function`
    -- (x) instead keep track of previous algorithm
-   -- search score
-   -- order_by_*
+   -- (x) search score
+   -- (x) order_by_*
    - (x) `self:sort_tree(algorithm_name: string, sort_function: fun(a: node, b: node): boolean)`
    -- (x) do nothing when name is the same as previous sort
    - ( ) tests
+
+*** Order By...
+
+    - (x) Work on `order_by_*` commands.
+    - (x) Reimplement help page.
+    -- (x) Rewrite the whole thing cuz the current implementation is a mess.
 
 ** 🔳 Event Handlers
 
