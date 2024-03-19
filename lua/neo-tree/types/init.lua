@@ -1,6 +1,6 @@
 ---@alias NeotreePathString string # Special type for string which represents a file path
 
----@class NeotreeNode: NuiTree.Node
+---@class NeotreeNode : NuiTree.Node, NeotreeSourceItem
 ---@field TODO nil # Figure out the fields
 
 ---@class NeotreeAutocmdArg

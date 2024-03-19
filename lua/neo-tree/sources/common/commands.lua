@@ -1027,10 +1027,13 @@ M.async.vsplit_with_window_picker = function(state, toggle_directory)
   open_with_cmd(state, "vsplit", toggle_directory, use_window_picker)
 end
 
+---Show help which lists all keybinds available in current window.
+---@param state NeotreeState
 M.async.show_help = function(state)
   local title = state.config and state.config.title or nil
   local prefix_key = state.config and state.config.prefix_key or nil
-  help.show(state, title, prefix_key)
+  local close_keys = state.config and state.config.close_keys or {}
+  require("neo-tree.manager.help").show(state, title, prefix_key, close_keys)
 end
 
 ---Adds all missing common commands to the given module

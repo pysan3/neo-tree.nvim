@@ -1190,13 +1190,13 @@ function locals.set_keymaps(window, state, mappings, map_mode)
   for lhs, opts in pairs(mappings) do
     local func = opts.func
     local vfunc = opts.vfunc
+    local opts_config = opts.config or {}
     opts = locals.normalize_keymap_opts(opts)
     window:map(map_mode or "n", lhs, function()
       log.timer_start("keybind: " .. opts.desc)
       return func
         and nio.run(function()
-          local config = opts.config or {}
-          for key, value in pairs(config) do
+          for key, value in pairs(opts_config) do
             if type(value) == "table" then
               state.config[key] = vim.tbl_deep_extend("force", state.config[key] or {}, value)
             else
@@ -1217,8 +1217,7 @@ function locals.set_keymaps(window, state, mappings, map_mode)
           log.time_it("#selected_nodes =", selected_nodes and #selected_nodes or 0)
           if selected_nodes and #selected_nodes > 0 then
             nio.run(function()
-              local config = opts.config or {}
-              for key, value in pairs(config) do
+              for key, value in pairs(opts_config) do
                 if type(value) == "table" then
                   state.config[key] = vim.tbl_deep_extend("force", state.config[key] or {}, value)
                 else
