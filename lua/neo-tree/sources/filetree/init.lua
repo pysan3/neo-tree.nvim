@@ -64,11 +64,6 @@ function Filetree.new(config, id, dir)
   self.tree:add_node(locals.new_node(self.dir, 1))
   self:add_task(function()
     self:fill_tree(nil, 1, nil)
-    if self.enable_git_status then
-      nio.run(function()
-        self:fill_git_state(nil, 1, true)
-      end)
-    end
   end)
   self.filtered_items = locals.purify_filtered_items(config.filtered_items or {})
 
@@ -305,7 +300,8 @@ function Filetree:fill_tree(parent_id, depth, reveal_path)
           table.insert(nodes[_parent], node)
           nio.nohup(function()
             if self.enable_git_status then
-              pathlib_git.request_git_status_update(node.pathlib, {})
+              local future = pathlib_git.request_git_status_update(node.pathlib, {})
+              self:assign_future_redraw(future)
             end
             if self.use_libuv_file_watcher then
               self:assign_file_watcher(node.pathlib)
