@@ -176,7 +176,7 @@ M.wrap2.close_node = function(state, callback)
     log.warn("don't collapse root node")
     return M.call(callback, nil)
   end
-  state:explicitly_collapse(node:get_id())
+  state:explicitly_collapse(target_id)
   return nio.wait(nio.run(function()
     state:focus_node(target_id)
     renderer.redraw(state)
