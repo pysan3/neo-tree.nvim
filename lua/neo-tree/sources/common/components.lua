@@ -334,7 +334,7 @@ M.git_status = function(config, node, state)
       })
     end
     return components
-  else
+  elseif git_status.change then
     return {
       text = "[" .. (git_status.change or pathlib_git_status.UNMODIFIED) .. "]",
       highlight = config.highlight or change_highlt,
