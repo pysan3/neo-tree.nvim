@@ -269,9 +269,9 @@ function Filetree:fill_tree(parent_id, depth, reveal_path)
     parent_id = scan_root:get_id()
     local scan_root_depth = scan_root:get_depth() - 1 -- we want parent_node to be 0
     -- Scan root's absolute path length. Compared against scanned items to calculate depth.
-    local scan_root_len = self.dir:len() + scan_root_depth
+    local scan_root_len = self.dir:depth() + scan_root_depth
     local reveal_node = reveal_path and tree:get_node(reveal_path:tostring())
-    if reveal_node and depth and reveal_path and reveal_path:len() - scan_root_len >= depth then
+    if reveal_node and depth and reveal_path and reveal_path:depth() - scan_root_len >= depth then
       log.time_it("skip fill_tree: reveal_path found")
       return -- reveal target already exists.
     end
@@ -296,7 +296,7 @@ function Filetree:fill_tree(parent_id, depth, reveal_path)
         local node = tree:get_node(path:tostring())
         if not node then
           local _parent = path:parent_assert():tostring()
-          node = locals.new_node(path, path:len() - scan_root_len + scan_root_depth + 1) -- level starts from 1
+          node = locals.new_node(path, path:depth() - scan_root_len + scan_root_depth + 1) -- level starts from 1
           table.insert(nodes[_parent], node)
           nio.nohup(function()
             if self.enable_git_status then
@@ -315,7 +315,7 @@ function Filetree:fill_tree(parent_id, depth, reveal_path)
     log.time_it("fill_tree end scan:", tasks_name)
     local keys = vim.tbl_keys(nodes)
     table.sort(keys, function(a, b)
-      return a:len() < b:len()
+      return a:depth() < b:depth()
     end)
     log.time_it("fill_tree end key sort")
     for index, value in ipairs(keys) do
@@ -363,7 +363,7 @@ function locals.skipfun_default(scan_root_len, depth, tree)
       if not depth then
         return false
       end
-      local dir_depth = dir:len() - scan_root_len
+      local dir_depth = dir:depth() - scan_root_len
       if dir_depth >= depth then -- exceeds depth
         return true
       elseif dir_depth < depth - 1 then -- needs to scan more than direct children
@@ -379,7 +379,7 @@ end
 
 function locals.skipfun_reveal_parent(scan_root_len, depth, reveal_path, fallback)
   local reveal_string = reveal_path:absolute():tostring()
-  local new_depth = math.max(depth, reveal_path:len() - scan_root_len)
+  local new_depth = math.max(depth, reveal_path:depth() - scan_root_len)
   return {
     depth = new_depth,
     skip_dir = function(dir)
@@ -570,7 +570,7 @@ function Filetree:assign_file_watcher(pathlib)
             pathlib_git.request_git_status_update(new_path, {})
             self:assign_future_redraw(new_path.git_state.is_ready)
           end, "fill_git_state")
-          local new_node = locals.new_node(new_path, new_path:len() - self.dir:len())
+          local new_node = locals.new_node(new_path, new_path:depth() - self.dir:depth())
           _tree:add_node(new_node, _p:tostring())
           do_redraw = true
         end
