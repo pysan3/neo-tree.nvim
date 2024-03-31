@@ -315,7 +315,7 @@ function Filetree:fill_tree(parent_id, depth, reveal_path)
     log.time_it("fill_tree end scan:", tasks_name)
     local keys = vim.tbl_keys(nodes)
     table.sort(keys, function(a, b)
-      return a:depth() < b:depth()
+      return a:len() < b:len()
     end)
     log.time_it("fill_tree end key sort")
     for index, value in ipairs(keys) do
